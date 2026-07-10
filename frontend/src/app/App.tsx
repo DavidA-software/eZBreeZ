@@ -346,6 +346,7 @@ function getBreeResponse(input: string, budget: BudgetData, username: string): s
 
   const fallbacks = [
     `Based on your budget — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate — you are well-positioned financially. I can help with savings strategy, expense reduction, investing basics, or debt management. What is on your mind?`,
+    `Based on your budget — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate — you are well-positioned financially. I can help with savings strategy, expense reduction, investing basics, or debt management. What is on your mind?`,
     `At a ${savedPct}% savings rate, your next move is building a buffer so that no unexpected expense derails your progress. Would you like me to calculate how long that would take at your current pace?`,
     `Your fundamentals are strong. The gap between where you are and financial security is mostly consistency. What is the one financial goal you most want to reach in the next six months?`,
   ];
@@ -414,103 +415,144 @@ function AuthLayout({ screen, go, onLogin }: {
   onLogin: (username: string, budget: BudgetData, decisions: AnalyzedDecision[]) => void;
 }) {
   return (
-    <div className="size-full flex flex-col md:flex-row overflow-hidden" style={{ background: P.bg }}>
-      <div className="hidden md:flex md:w-2/5 flex-col items-center justify-center px-12 py-16 gap-8 shrink-0"
-        style={{ background: P.navy }}>
-        <Logo inv size="text-5xl" />
-        <p className="text-white/70 text-center text-base leading-relaxed max-w-xs"
-          style={{ fontFamily: "'DM Sans', sans-serif" }}>
-          Smart budgeting made easy. Track spending, grow savings, and hit your financial goals with AI-powered insights.
-        </p>
-        <div className="flex flex-col gap-4 w-full max-w-xs mt-2">
-          {[{ icon: <Target size={18}/>, t:"Set financial goals"}, {icon:<TrendingUp size={18}/>, t:"Track spending patterns"}, {icon:<Sparkles size={18}/>, t:"Get AI budget coaching"}]
-            .map(({ icon, t }) => (
-              <div key={t} className="flex items-center gap-3 text-white/80 text-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(87,204,153,0.25)", color: P.emerald }}>{icon}</span>
-                {t}
-              </div>
-            ))}
+      <div className="size-full flex flex-col md:flex-row overflow-hidden" style={{ background: P.bg }}>
+        <div className="hidden md:flex md:w-2/5 flex-col items-center justify-center px-12 py-16 gap-8 shrink-0"
+             style={{ background: P.navy }}>
+          <Logo inv size="text-5xl" />
+          <p className="text-white/70 text-center text-base leading-relaxed max-w-xs"
+             style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            Smart budgeting made easy. Track spending, grow savings, and hit your financial goals with AI-powered insights.
+          </p>
+          <div className="flex flex-col gap-4 w-full max-w-xs mt-2">
+            {[{ icon: <Target size={18}/>, t:"Set financial goals"}, {icon:<TrendingUp size={18}/>, t:"Track spending patterns"}, {icon:<Sparkles size={18}/>, t:"Get AI budget coaching"}]
+                .map(({ icon, t }) => (
+                    <div key={t} className="flex items-center gap-3 text-white/80 text-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                      <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(87,204,153,0.25)", color: P.emerald }}>{icon}</span>
+                      {t}
+                    </div>
+                ))}
+          </div>
         </div>
-        <div className="mt-auto w-full max-w-xs rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)" }}>
-          <p className="text-white/50 text-xs mb-2" style={{ fontFamily: "'DM Sans', sans-serif" }}>Your eZBrez Score</p>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)" }}>
-              <div className="h-full rounded-full" style={{ width: "67%", background: P.emerald }} />
-            </div>
-            <span className="text-white font-bold text-sm" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>67/100</span>
+        <div className="flex-1 flex items-center justify-center px-6 py-12 overflow-y-auto">
+          <div className="w-full max-w-md">
+            <div className="md:hidden mb-8 text-center"><Logo size="text-4xl" /></div>
+            {screen === "login"    && <LoginForm    go={go} onLogin={onLogin} />}
+            {screen === "register" && <RegisterForm go={go} onLogin={onLogin} />}
+            {screen === "reset"    && <ResetForm    go={go} />}
           </div>
         </div>
       </div>
-      <div className="flex-1 flex items-center justify-center px-6 py-12 overflow-y-auto">
-        <div className="w-full max-w-md">
-          <div className="md:hidden mb-8 text-center"><Logo size="text-4xl" /></div>
-          {screen === "login"    && <LoginForm    go={go} onLogin={onLogin} />}
-          {screen === "register" && <RegisterForm go={go} onLogin={onLogin} />}
-          {screen === "reset"    && <ResetForm    go={go} />}
+  );
+}
+
+function LoginForm({ go }: { go: (s: Screen) => void }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:8081/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pass }),
+      });
+      if (!res.ok) {
+        throw new Error("Invalid email or password");
+      }
+      const user = await res.json();
+      localStorage.setItem("userId", user.id.toString());
+      go("dashboard");
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+      <FormCard title="Welcome back" subtitle="Sign in to your EZBREZ account">
+        <div className="flex flex-col gap-4">
+          <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
+          <Field label="Password" type="password" value={pass} onChange={setPass} placeholder="••••••••" />
         </div>
-      </div>
-    </div>
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        <div className="flex items-center justify-between text-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          <Btn sound="click" onClick={() => go("reset")}
+               className="font-medium hover:underline" style={{ color: P.teal }}>
+            Forgot password?
+          </Btn>
+          <Btn sound="click" onClick={() => go("register")}
+               className="font-medium hover:underline" style={{ color: P.teal }}>
+            Create account
+          </Btn>
+        </div>
+        <PrimaryBtn onClick={handleLogin} fullWidth>
+          {loading ? "Signing in..." : "Sign In →"}
+        </PrimaryBtn>
+      </FormCard>
   );
 }
 
-function LoginForm({ go, onLogin }: { go: (s: Screen) => void; onLogin: (u: string, b: BudgetData, d: AnalyzedDecision[]) => void }) {
-  const [user, setUser] = useState(""); const [pass, setPass] = useState(""); const [err, setErr] = useState<string|null>(null);
-  const submit = () => {
-    if (!user.trim() || !pass.trim()) { setErr("Please fill in all fields."); return; }
-    const found = LS.findUser(user.trim(), pass);
-    if (!found) { setErr("Incorrect username or password."); return; }
-    onLogin(found.username, LS.loadBudget(found.username) || DEFAULT_BUDGET, LS.loadDecisions(found.username));
-  };
-  return (
-    <FormCard title="Welcome back" subtitle="Sign in to your EZBREZ account">
-      <div className="flex flex-col gap-4">
-        <Field label="Username" value={user} onChange={v=>{setUser(v);setErr(null);}} placeholder="Enter your username" />
-        <Field label="Password" type="password" value={pass} onChange={v=>{setPass(v);setErr(null);}} placeholder="••••••••" />
-        {err && <p className="text-sm text-red-500 flex items-center gap-1.5"><AlertCircle size={14}/>{err}</p>}
-      </div>
-      <div className="flex items-center justify-between text-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Btn sound="click" onClick={()=>go("reset")} className="font-medium hover:underline" style={{color:P.teal}}>Forgot password?</Btn>
-        <Btn sound="click" onClick={()=>go("register")} className="font-medium hover:underline" style={{color:P.teal}}>Create account</Btn>
-      </div>
-      <PrimaryBtn onClick={submit} full>Sign In</PrimaryBtn>
-    </FormCard>
-  );
-}
+function RegisterForm({ go }: { go: (s: Screen) => void }) {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [dob, setDob] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-function RegisterForm({ go, onLogin }: { go: (s: Screen) => void; onLogin: (u: string, b: BudgetData, d: AnalyzedDecision[]) => void }) {
-  const [email,setEmail]=useState(""); const [username,setUsername]=useState("");
-  const [bd,setBd]=useState(""); const [password,setPassword]=useState("");
-  const [errors,setErrors]=useState<Record<string,string>>({});
-  const validate = () => {
-    const e: Record<string,string> = {};
-    if (!email.includes("@")) e.email = "Enter a valid email address.";
-    if (username.trim().length < 3) e.username = "Username must be at least 3 characters.";
-    if (LS.userExists(username.trim())) e.username = "Username already taken.";
-    if (password.length < 6) e.password = "Password must be at least 6 characters.";
-    return e;
+  const handleSignup = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:8081/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email,
+          password,
+          dateOfBirth: dob, // must be "YYYY-MM-DD" for LocalDate to parse correctly
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Signup failed — email may already be in use");
+      }
+      const user = await res.json();
+      localStorage.setItem("userId", user.id.toString());
+      go("budget");
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
-  const submit = () => {
-    const e = validate();
-    if (Object.keys(e).length > 0) { setErrors(e); return; }
-    LS.saveUser({ username: username.trim(), email, password, bd });
-    onLogin(username.trim(), DEFAULT_BUDGET, []);
-  };
-  const upd = (field: string, val: string) => {
-    setErrors(p => { const n={...p}; delete n[field]; return n; });
-    ({email:setEmail,username:setUsername,bd:setBd,password:setPassword})[field]?.(val);
-  };
+
   return (
-    <FormCard title="Create account" subtitle="Start your budgeting journey today">
-      <div className="flex flex-col gap-4">
-        <Field label="Email" type="email" value={email} onChange={v=>upd("email",v)} placeholder="you@example.com" error={errors.email} />
-        <Field label="Username" value={username} onChange={v=>upd("username",v)} placeholder="Choose a username" error={errors.username} />
-        <Field label="Date of Birth" value={bd} onChange={v=>upd("bd",v)} placeholder="MM/DD/YYYY" />
-        <Field label="Password" type="password" value={password} onChange={v=>upd("password",v)} placeholder="Min. 6 characters" error={errors.password} />
-      </div>
-      <PrimaryBtn onClick={submit} full>Create Account</PrimaryBtn>
-      <Btn sound="click" onClick={()=>go("login")} className="text-sm text-center font-medium hover:underline"
-        style={{ fontFamily:"'DM Sans',sans-serif", color:"#5E8A7A" }}>Back to sign in</Btn>
-    </FormCard>
+      <FormCard title="Create account" subtitle="Start your budgeting journey today">
+        <div className="flex flex-col gap-4">
+          <Field label="First Name" value={firstName} onChange={setFirstName} placeholder="Alex" />
+          <Field label="Last Name" value={lastName} onChange={setLastName} placeholder="Rivera" />
+          <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
+          <Field label="Date of Birth" type="date" value={dob} onChange={setDob} />
+          <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Min. 8 characters" />
+        </div>
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        <PrimaryBtn onClick={handleSignup} fullWidth>
+          {loading ? "Creating account..." : "Create Account →"}
+        </PrimaryBtn>
+        <Btn sound="click" onClick={() => go("login")}
+             className="text-sm text-center font-medium hover:underline"
+             style={{ fontFamily: "'DM Sans', sans-serif", color: "#5E8A7A" }}>
+          ← Back to sign in
+        </Btn>
+      </FormCard>
   );
 }
 
@@ -639,7 +681,7 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
           {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} />}
           {screen === "budget"    && <BudgetView budget={budget} onChange={onBudgetChange} go={go} />}
           {screen === "chat"      && <ChatView username={username} budget={budget} />}
-          {screen === "history"   && <HistoryView decisions={decisions}/>}
+          {screen === "history"   && <HistoryView />}
           {screen === "scores"    && <ScoresView budget={budget} decisions={decisions} onDecisionsChange={onDecisionsChange} username={username} />}
         </div>
       </main>
@@ -647,240 +689,480 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
   );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
+const CustomTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+      <div className="bg-white rounded-xl px-4 py-2.5 shadow-lg text-sm font-semibold"
+           style={{ border: `1px solid ${d.color}30`, color: P.navy, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        {d.name}: <span style={{ color: d.color }}>{d.value}%</span>
+      </div>
+  );
+};
+
+function StatCard({ label, value, sub, icon, up }: {
+  label: string; value: string; sub: string; icon: React.ReactNode; up: boolean;
+}) {  return (
+      <div className="bg-white rounded-2xl p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow"
+           style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
+        <div className="flex items-start justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider"
+             style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#9CB8C8" }}>
+            {label}
+          </p>
+          <span className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ background: up ? "rgba(87,204,153,0.12)" : "rgba(192,87,74,0.1)", color: up ? P.emerald : "#C0574A" }}>
+          {icon}
+        </span>
+        </div>
+        <p className="text-2xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+          {value}
+        </p>
+        <p className="text-xs font-medium" style={{ fontFamily: "'DM Sans', sans-serif", color: "#9CB8C8" }}>
+          {sub}
+        </p>
+      </div>
+  );
+}
+
+/// ═════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═════════════════════════════════════════════════════════════════════════════
-const PIE_DATA = [
-  { name:"Car",     value:7.5,  color:"#D4A21A", range:"5-10%"  },
-  { name:"Food",    value:22.5, color:"#C0574A", range:"20-25%" },
-  { name:"Unspent", value:70,   color:P.emerald, range:"70-80%" },
+interface ExpenseItem {
+  id: number;
+  name: string;
+  monthlyAmount: number;
+}
+
+interface BudgetResponse {
+  id: number;
+  monthlyIncome: number;
+  expenseItems: ExpenseItem[];
+}
+
+const CHART_COLORS = [
+  "#C0574A", // red
+  "#D4A21A", // amber
+  "#7C5CBF", // purple
+  "#0EA5B0", // cyan
+  "#E07B30", // orange
+  "#3B7BC4", // blue
+  "#B5527A", // rose
+  P.teal,
 ];
 
-function DashboardView({ go, budget, username }: { go:(s:Screen)=>void; budget:BudgetData; username:string }) {
-  const income   = parseFloat(budget.income) || 5200;
-  const totalExp = budget.expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const saved    = income - totalExp;
-  const savedPct = Math.max(0, Math.round((saved/income)*100));
+function getBudgetHealthIcon(savedPct: number) {
+  if (savedPct >= 20) {
+    return { icon: <TrendingUp size={20} />, color: P.emerald, label: "On track" };
+  } else if (savedPct >= 0) {
+    return { icon: <AlertCircle size={20} />, color: "#D4A21A", label: "Tight" };
+  } else {
+    return { icon: <TrendingDown size={20} />, color: "#C0574A", label: "Overspending" };
+  }
+}
 
-  const stats = [
-    { label:"Monthly Income",   value:`$${income.toLocaleString()}`,   sub:`${budget.period}ly`,         icon:<DollarSign  size={20}/>, up:true  },
-    { label:"Total Expenses",   value:`$${totalExp.toLocaleString()}`, sub:`${100-savedPct}% of income`, icon:<TrendingDown size={20}/>, up:false },
-    { label:"Saved This Month", value:`$${saved.toLocaleString()}`,    sub:`${savedPct}% savings rate`,  icon:<TrendingUp size={20}/>,  up:true  },
-    { label:"eZBrez Score",     value:"67/100",                        sub:"Good standing",              icon:<Sparkles size={20}/>,    up:true  },
-  ];
+function DashboardView({ go }: { go: (s: Screen) => void }) {
+  const [budget, setBudget] = useState<BudgetResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const categories = [
-    { name:"Unspent", pct:savedPct, color:P.emerald, amount:`$${saved.toLocaleString()}` },
-    ...budget.expenses.map((e,i)=>{
-      const colors=["#C0574A","#D4A21A",P.teal,"#7C5CBF"];
-      const amt=parseFloat(e.amount)||0;
-      return { name:e.label, pct:Math.round((amt/income)*100), color:colors[i%colors.length], amount:`$${amt.toLocaleString()}` };
-    }),
-  ].slice(0,5);
+  useEffect(() => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      setError("Not logged in");
+      setLoading(false);
+      return;
+    }
 
-  const CustomTT = ({ active, payload }: any) => {
-    if (!active||!payload?.length) return null;
-    const d = payload[0].payload;
-    return <div className="bg-white rounded-xl px-4 py-2.5 shadow-lg text-sm font-semibold"
-      style={{ border:`1px solid ${d.color}30`, color:P.navy, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-      {d.name}: <span style={{color:d.color}}>{d.value}%</span></div>;
-  };
+    fetch(`http://localhost:8081/api/budgets/${userId}`)
+        .then(res => {
+          if (!res.ok) throw new Error("No budget found — set one up first");
+          return res.json();
+        })
+        .then((data: BudgetResponse) => {
+          setBudget(data);
+        })
+        .catch(err => {
+          console.error("Dashboard fetch error:", err);
+          setError(err.message || "Something went wrong");
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+  }, []);
 
-  return (
-    <div className="px-6 py-7 flex flex-col gap-7 max-w-screen-xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-            Good morning, {username}
-          </h1>
-          <p className="text-sm mt-0.5" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>
-            {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} — Budget snapshot
-          </p>
-        </div>
-        <Btn sound="confirm" onClick={()=>go("budget")}
-          className="hidden sm:flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white hover:brightness-105"
-          style={{ background:`linear-gradient(135deg,${P.navy},${P.teal})`, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-          Edit Budget <ArrowRight size={15}/>
-        </Btn>
-      </div>
+  if (loading) {
+    return <div className="px-6 py-7 max-w-screen-xl mx-auto">Loading your dashboard…</div>;
+  }
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map(s=>(
-          <div key={s.label} className="bg-white rounded-2xl p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow"
-            style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-            <div className="flex items-start justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>{s.label}</p>
-              <span className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background:s.up?"rgba(87,204,153,0.12)":"rgba(192,87,74,0.1)", color:s.up?P.emerald:"#C0574A" }}>{s.icon}</span>
-            </div>
-            <p className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>{s.value}</p>
-            <p className="text-xs font-medium" style={{ fontFamily:"'DM Sans',sans-serif", color:"#9CB8C8" }}>{s.sub}</p>
+  if (error || !budget) {
+    return (
+        <div className="px-6 py-7 flex flex-col gap-7 max-w-screen-xl mx-auto">
+          {/* Greeting */}
+          <div>
+            <h1 className="text-2xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+              Welcome to eZBreZ 👋
+            </h1>
+            <p className="text-sm mt-0.5" style={{ fontFamily: "'DM Sans', sans-serif", color: "#6B9AA8" }}>
+              Set up your budget to see your personalized dashboard
+            </p>
           </div>
-        ))}
-      </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl p-6 shadow-sm" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-          <h2 className="text-base font-bold mb-5" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>Spending Breakdown</h2>
-          <div className="flex items-center gap-6">
-            <div style={{ width:180, height:180 }} className="shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={PIE_DATA} cx="50%" cy="50%" innerRadius={52} outerRadius={84}
-                    dataKey="value" startAngle={90} endAngle={-270} stroke="none" paddingAngle={2}>
-                    {PIE_DATA.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                  </Pie>
-                  <Tooltip content={<CustomTT/>}/>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex flex-col gap-3 flex-1">
-              {PIE_DATA.map(d=>(
-                <div key={d.name} className="flex items-center gap-2.5">
-                  <div className="w-3 h-3 rounded-sm shrink-0" style={{ background:d.color }}/>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>{d.name}</span>
-                      <span className="text-xs font-bold" style={{ color:d.color }}>{d.range}</span>
-                    </div>
-                    <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ background:"#EEF9F4" }}>
-                      <div className="h-full rounded-full" style={{ width:`${d.value}%`, background:d.color }}/>
-                    </div>
+          {/* Empty stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { label: "Monthly Income", icon: <DollarSign size={20} /> },
+              { label: "Total Spent", icon: <TrendingDown size={20} /> },
+              { label: "Saved This Month", icon: <TrendingUp size={20} /> },
+            ].map((s) => (
+                <div key={s.label} className="bg-white rounded-2xl p-5 flex flex-col gap-3 shadow-sm"
+                     style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
+                  <div className="flex items-start justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider"
+                       style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#9CB8C8" }}>
+                      {s.label}
+                    </p>
+                    <span className="w-9 h-9 rounded-xl flex items-center justify-center"
+                          style={{ background: "rgba(156,184,200,0.12)", color: "#9CB8C8" }}>
+                  {s.icon}
+                </span>
                   </div>
+                  <p className="text-2xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#C7D6DE" }}>
+                    —
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-sm" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-          <h2 className="text-base font-bold mb-5" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>Category Totals</h2>
-          <div className="flex flex-col gap-4">
-            {categories.map(c=>(
-              <div key={c.name}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>{c.name}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium" style={{ fontFamily:"'DM Sans',sans-serif", color:"#9CB8C8" }}>{c.amount}</span>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:`${c.color}18`, color:c.color }}>{c.pct}%</span>
-                  </div>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background:"#EEF9F4" }}>
-                  <div className="h-full rounded-full" style={{ width:`${c.pct}%`, background:c.color }}/>
-                </div>
-              </div>
             ))}
           </div>
-        </div>
-      </div>
 
-      <div>
-        <h2 className="text-base font-bold mb-4" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>Budget Insights</h2>
-        <div className="grid sm:grid-cols-3 gap-4">
-          {[
-            { t: savedPct>=50?"Exceptional savings rate":"Building strong savings", b:`You are saving ${savedPct}% of income — ${savedPct>=50?"well above":"on track with"} the recommended 20% rule.`, s:"budget" as Screen },
-            { t:"Chat with Bree", b:"Ask Bree AI for personalized advice, spending tips, and savings strategies tailored to your data.", s:"chat" as Screen },
-            { t:"Score a decision", b:"Use EZBREZ Scores to analyze any financial decision before committing — with pros, cons, and a 1-100 rating.", s:"scores" as Screen },
-          ].map((tip,i)=>(
-            <Btn key={i} sound="click" onClick={()=>go(tip.s)}
-              className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow text-left w-full"
-              style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-              <div className="w-8 h-8 rounded-xl mb-3 flex items-center justify-center" style={{ background:"rgba(87,204,153,0.12)", color:P.emerald }}>
-                <Sparkles size={16}/>
+          {/* Empty charts row */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col items-center justify-center gap-3 text-center"
+                 style={{ border: "1px dashed rgba(34,87,122,0.15)", minHeight: 260 }}>
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                   style={{ background: "rgba(87,204,153,0.12)", color: P.emerald }}>
+                <Wallet size={22} />
               </div>
-              <p className="text-sm font-bold mb-1.5" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>{tip.t}</p>
-              <p className="text-xs leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>{tip.b}</p>
+              <p className="text-sm font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+                No spending data yet
+              </p>
+              <p className="text-xs max-w-[220px]" style={{ fontFamily: "'DM Sans', sans-serif", color: "#9CB8C8" }}>
+                Your spending breakdown will appear here once you set up a budget
+              </p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col items-center justify-center gap-3 text-center"
+                 style={{ border: "1px dashed rgba(34,87,122,0.15)", minHeight: 260 }}>
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                   style={{ background: "rgba(56,163,165,0.12)", color: P.teal }}>
+                <LayoutDashboard size={22} />
+              </div>
+              <p className="text-sm font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+                No expense totals yet
+              </p>
+              <p className="text-xs max-w-[220px]" style={{ fontFamily: "'DM Sans', sans-serif", color: "#9CB8C8" }}>
+                Add your expected expenses to see them broken down here
+              </p>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="rounded-2xl p-6 flex items-center justify-between flex-wrap gap-4"
+               style={{ background: `linear-gradient(135deg, ${P.navy} 0%, ${P.teal} 100%)` }}>
+            <div>
+              <p className="text-white font-bold text-lg" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                Ready to take control of your budget?
+              </p>
+              <p className="text-white/70 text-sm mt-1" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                Add your income and expenses to unlock your dashboard
+              </p>
+            </div>
+            <Btn sound="confirm" onClick={() => go("budget")}
+                 className="flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold hover:brightness-105"
+                 style={{ background: "#fff", color: P.navy, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              Set Up My Budget <ArrowRight size={15} />
             </Btn>
-          ))}
+          </div>
+        </div>
+    );
+  }
+
+  // ─── Derived numbers from real data ───────────────────────────────────
+  const income = budget.monthlyIncome;
+  const totalSpent = budget.expenseItems.reduce((sum, e) => sum + e.monthlyAmount, 0);
+  const saved = income - totalSpent;
+  const savedPct = income > 0 ? Math.round((saved / income) * 100) : 0;
+  const spentPct = income > 0 ? Math.round((totalSpent / income) * 100) : 0;
+  const health = getBudgetHealthIcon(savedPct);
+  const isHealthy = savedPct >= 20;
+
+
+  const pieData = [
+    ...budget.expenseItems.map((e, i) => ({
+      name: e.name,
+      value: income > 0 ? Math.round((e.monthlyAmount / income) * 1000) / 10 : 0,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+    })),
+    {
+      name: "Unspent",
+      value: income > 0 ? Math.round((saved / income) * 1000) / 10 : 0,
+      color: health.color,
+    },
+  ];
+
+  const statCards = [
+    { label: "Monthly Income", value: `$${income.toLocaleString()}`, sub: "", icon: <DollarSign size={20} />, up: true },
+    { label: "Total Spent", value: `$${totalSpent.toLocaleString()}`, sub: `${spentPct}% of income`, icon: isHealthy ? <TrendingUp size={20} /> : <TrendingDown size={20} />, up: isHealthy },
+    { label: "Saved This Month", value: `$${saved.toLocaleString()}`, sub: health.label, icon: isHealthy ? <TrendingUp size={20} /> : <TrendingDown size={20} />, up: isHealthy },
+  ];
+
+  return (
+      <div className="px-6 py-7 flex flex-col gap-7 max-w-screen-xl mx-auto">
+        {/* Greeting */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+              Your Budget Snapshot
+            </h1>
+            <p className="text-sm mt-0.5" style={{ fontFamily: "'DM Sans', sans-serif", color: "#6B9AA8" }}>
+              Based on your current budget
+            </p>
+          </div>
+          <Btn sound="confirm" onClick={() => go("budget")}
+               className="hidden sm:flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white hover:brightness-105"
+               style={{ background: `linear-gradient(135deg, ${P.navy}, ${P.teal})`, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            Edit Budget <ArrowRight size={15} />
+          </Btn>
+        </div>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          {statCards.map((s) => <StatCard key={s.label} {...s} />)}
+        </div>
+
+        {/* Charts row */}
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Pie chart card */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm"
+               style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
+            <h2 className="text-base font-bold mb-5" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+              Spending Breakdown
+            </h2>
+            <div className="flex items-center gap-6">
+              <div style={{ width: 180, height: 180 }} className="shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={52} outerRadius={84}
+                         dataKey="value" startAngle={90} endAngle={-270} stroke="none" paddingAngle={2}>
+                      {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex flex-col gap-3 flex-1">
+                {pieData.map(d => (
+                    <div key={d.name} className="flex items-center gap-2.5">
+                      <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: d.color }} />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.dark }}>
+                        {d.name}
+                      </span>
+                          <span className="text-xs font-bold" style={{ color: d.color }}>{d.value}%</span>
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ background: "#EEF9F4" }}>
+                          <div className="h-full rounded-full" style={{ width: `${d.value}%`, background: d.color }} />
+                        </div>
+                      </div>
+                    </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Category breakdown */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm"
+               style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
+            <h2 className="text-base font-bold mb-5" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>
+              Expense Totals
+            </h2>
+            <div className="flex flex-col gap-4">
+              {budget.expenseItems.map((item, i) => {
+                const pct = income > 0 ? Math.round((item.monthlyAmount / income) * 100) : 0;
+                const color = CHART_COLORS[i % CHART_COLORS.length];
+                return (
+                    <div key={item.id}>
+                      <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-semibold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.dark }}>
+                      {item.name}
+                    </span>
+                        <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium" style={{ fontFamily: "'DM Sans', sans-serif", color: "#9CB8C8" }}>
+                        ${item.monthlyAmount.toLocaleString()}
+                      </span>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                                style={{ background: `${color}18`, color }}>
+                        {pct}%
+                      </span>
+                        </div>
+                      </div>
+                      <div className="h-2 rounded-full overflow-hidden" style={{ background: "#EEF9F4" }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                             style={{ width: `${pct}%`, background: color }} />
+                      </div>
+                    </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
   );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// BUDGET (no categories section)
+// BUDGET
 // ═════════════════════════════════════════════════════════════════════════════
-function BudgetView({ budget, onChange, go }: { budget:BudgetData; onChange:(b:BudgetData)=>void; go:(s:Screen)=>void }) {
-  const [showPeriod, setShowPeriod] = useState(false);
+// ═════════════════════════════════════════════════════════════════════════════
+// BUDGET
+// ═════════════════════════════════════════════════════════════════════════════
+function BudgetView({ budget, onChange, go }: { budget: BudgetData; onChange: (b: BudgetData) => void; go: (s: Screen) => void }) {
+  const [saving, setSaving] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(true);
+  const [error, setError] = useState("");
   const uid = useRef(100);
-  const setIncome   = (v:string) => onChange({...budget, income:v});
-  const setPeriod   = (v:"Month"|"Year") => onChange({...budget, period:v});
-  const setExp      = (id:number,field:keyof Expense,val:string) =>
-    onChange({...budget, expenses:budget.expenses.map(e=>e.id===id?{...e,[field]:val}:e)});
-  const addExp      = () => { playSound("pop"); onChange({...budget, expenses:[...budget.expenses,{id:uid.current++,label:"New Expense",amount:"",period:"Month"}]}); };
-  const removeExp   = (id:number) => { playSound("pop"); onChange({...budget, expenses:budget.expenses.filter(e=>e.id!==id)}); };
+
+  // Fetch existing budget on mount so the form reflects what's actually saved
+  useEffect(() => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      setLoadingExisting(false);
+      return;
+    }
+
+    fetch(`http://localhost:8081/api/budgets/${userId}`)
+        .then(res => {
+          if (!res.ok) throw new Error("No existing budget");
+          return res.json();
+        })
+        .then((data: { monthlyIncome: number; expenseItems: { id: number; name: string; monthlyAmount: number }[] }) => {
+          onChange({
+            income: data.monthlyIncome.toString(),
+            period: "Month",
+            expenses: data.expenseItems.map(item => ({
+              id: item.id,
+              label: item.name,
+              amount: item.monthlyAmount.toString(),
+              period: "Month" as const,
+            })),
+          });
+        })
+        .catch(() => {
+          // No existing budget yet — that's fine, keep default/empty state
+        })
+        .finally(() => setLoadingExisting(false));
+  }, []);
+
+  const setIncome = (v: string) => onChange({ ...budget, income: v });
+  const setExp = (id: number, field: keyof Expense, val: string) =>
+      onChange({ ...budget, expenses: budget.expenses.map(e => e.id === id ? { ...e, [field]: val } : e) });
+  const addExp = () => { playSound("pop"); onChange({ ...budget, expenses: [...budget.expenses, { id: uid.current++, label: "New Expense", amount: "", period: "Month" }] }); };
+  const removeExp = (id: number) => { playSound("pop"); onChange({ ...budget, expenses: budget.expenses.filter(e => e.id !== id) }); };
+
+  const handleSave = async () => {
+    setError("");
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      setError("Not logged in");
+      return;
+    }
+
+    const payload = {
+      userId: parseInt(userId),
+      monthlyIncome: parseFloat(budget.income) || 0,
+      expenseItems: budget.expenses.map(e => ({
+        name: e.label,
+        monthlyAmount: parseFloat(e.amount) || 0,
+      })),
+    };
+
+    setSaving(true);
+    try {
+      const res = await fetch("http://localhost:8081/api/budgets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to save budget");
+      go("dashboard");
+    } catch (err: any) {
+      setError(err.message || "Something went wrong saving your budget");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loadingExisting) {
+    return <div className="px-6 py-7 max-w-2xl mx-auto">Loading your budget…</div>;
+  }
 
   return (
-    <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>My Budget</h1>
-        <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>Set your income and expected monthly expenses</p>
-      </div>
-      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-        <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>Income</h2>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 rounded-xl border px-4 py-2.5 flex-1 min-w-[140px]"
-            style={{ borderColor:"rgba(34,87,122,0.18)" }}>
-            <span className="font-bold" style={{ color:P.teal }}>$</span>
-            <input value={budget.income} onChange={e=>setIncome(e.target.value)}
-              className="flex-1 outline-none text-sm font-semibold bg-transparent" style={{ color:P.dark }} placeholder="0"/>
-          </div>
-          <span className="text-sm font-semibold" style={{ color:"#9CB8C8" }}>per</span>
-          <div className="relative">
-            <Btn sound="click" onClick={()=>setShowPeriod(p=>!p)}
-              className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold hover:bg-gray-50"
-              style={{ borderColor:"rgba(34,87,122,0.18)", color:P.navy, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-              {budget.period} <ChevronDown size={14}/>
-            </Btn>
-            {showPeriod && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-xl shadow-xl z-20 overflow-hidden"
-                style={{ border:"1px solid rgba(34,87,122,0.12)" }}>
-                {(["Month","Year"] as const).map(p=>(
-                  <Btn key={p} sound="click" onClick={()=>{setPeriod(p);setShowPeriod(false);}}
-                    className="block w-full px-4 py-2.5 text-sm font-semibold text-left hover:bg-gray-50"
-                    style={{ color:P.navy, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{p}</Btn>
-                ))}
-              </div>
-            )}
-          </div>
+      <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: P.navy }}>My Budget</h1>
+          <p className="text-sm mt-1" style={{ fontFamily: "'DM Sans', sans-serif", color: "#6B9AA8" }}>Set your income and expected monthly expenses</p>
         </div>
-      </div>
-      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-        <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>Expected Expenses</h2>
-        <div className="flex flex-col gap-3">
-          {budget.expenses.map(exp=>(
-            <div key={exp.id} className="flex items-center gap-3">
-              <input value={exp.label} onChange={e=>setExp(exp.id,"label",e.target.value)}
-                className="flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold outline-none min-w-0"
-                style={{ borderColor:"rgba(34,87,122,0.15)", color:P.navy, fontFamily:"'Plus Jakarta Sans',sans-serif" }}/>
-              <div className="flex items-center gap-1 rounded-xl border px-3 py-2.5 w-28 shrink-0" style={{ borderColor:"rgba(34,87,122,0.15)" }}>
-                <span className="text-sm font-bold" style={{ color:P.teal }}>$</span>
-                <input value={exp.amount} onChange={e=>setExp(exp.id,"amount",e.target.value)}
-                  className="flex-1 outline-none text-sm font-semibold min-w-0"
-                  style={{ color:P.dark, fontFamily:"'DM Sans',sans-serif" }} placeholder="0"/>
-              </div>
-              <span className="text-xs font-medium shrink-0" style={{ color:"#9CB8C8" }}>/ mo</span>
-              <Btn sound="pop" onClick={()=>removeExp(exp.id)}
-                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-50 shrink-0"
-                style={{ color:"#C0574A" }}><X size={15}/></Btn>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4" style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
+          <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#9CB8C8" }}>Income</h2>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-xl border px-4 py-2.5 flex-1 min-w-[140px]" style={{ borderColor: "rgba(34,87,122,0.18)" }}>
+              <span className="font-bold" style={{ color: P.teal }}>$</span>
+              <input value={budget.income} onChange={e => setIncome(e.target.value)}
+                     className="flex-1 outline-none text-sm font-semibold bg-transparent" style={{ color: P.dark }} placeholder="0" />
             </div>
-          ))}
+            <span className="text-sm font-semibold shrink-0" style={{ color: "#9CB8C8", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>/ month</span>
+          </div>
         </div>
-        <Btn sound="pop" onClick={addExp}
-          className="flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl w-fit hover:brightness-105"
-          style={{ background:"rgba(87,204,153,0.12)", color:P.emerald, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-          <Plus size={15}/> Add Expense
-        </Btn>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4" style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
+          <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#9CB8C8" }}>Expected Expenses</h2>
+          <div className="flex flex-col gap-3">
+            {budget.expenses.map(exp => (
+                <div key={exp.id} className="flex items-center gap-3">
+                  <input value={exp.label} onChange={e => setExp(exp.id, "label", e.target.value)}
+                         className="flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold outline-none min-w-0"
+                         style={{ borderColor: "rgba(34,87,122,0.15)", color: P.navy, fontFamily: "'Plus Jakarta Sans', sans-serif" }} />
+                  <div className="flex items-center gap-1 rounded-xl border px-3 py-2.5 w-28 shrink-0" style={{ borderColor: "rgba(34,87,122,0.15)" }}>
+                    <span className="text-sm font-bold" style={{ color: P.teal }}>$</span>
+                    <input value={exp.amount} onChange={e => setExp(exp.id, "amount", e.target.value)}
+                           className="flex-1 outline-none text-sm font-semibold min-w-0"
+                           style={{ color: P.dark, fontFamily: "'DM Sans', sans-serif" }} placeholder="0" />
+                  </div>
+                  <span className="text-xs font-medium shrink-0" style={{ color: "#9CB8C8" }}>/ mo</span>
+                  <Btn sound="pop" onClick={() => removeExp(exp.id)}
+                       className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-50 shrink-0"
+                       style={{ color: "#C0574A" }}><X size={15} /></Btn>
+                </div>
+            ))}
+          </div>
+          <Btn sound="pop" onClick={addExp}
+               className="flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl w-fit hover:brightness-105"
+               style={{ background: "rgba(87,204,153,0.12)", color: P.emerald, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            <Plus size={15} /> Add Expense
+          </Btn>
+        </div>
+
+        {error && <p className="text-sm" style={{ color: "#C0574A" }}>{error}</p>}
+
+        <div className="flex justify-end">
+          <Btn sound="confirm" onClick={handleSave}
+               className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white hover:brightness-105"
+               style={{ background: `linear-gradient(135deg,${P.navy},${P.teal})`, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            {saving ? "Saving..." : "Save and View Dashboard"} <ArrowRight size={15} />
+          </Btn>
+        </div>
       </div>
-      <div className="flex justify-end">
-        <Btn sound="confirm" onClick={()=>go("dashboard")}
-          className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white hover:brightness-105"
-          style={{ background:`linear-gradient(135deg,${P.navy},${P.teal})`, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-          Save and View Dashboard <ArrowRight size={15}/>
-        </Btn>
-      </div>
-    </div>
   );
 }
 
@@ -1040,21 +1322,15 @@ const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string
   ],
 };
 
-function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
+function HistoryView() {
   const [activeMonth, setActiveMonth] = useState("July 2026");
   const data = MONTH_DATA[activeMonth];
   return (
     <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
       <div>
-
-      {/* start of BUDGET HISTORY */}
-
         <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>Budget History</h1>
         <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>Monthly spending breakdown by category</p>
       </div>
-
-      {/* set active month */}
-
       <div className="flex gap-2 flex-wrap">
         {MONTHS.map(m=>(
           <Btn key={m} sound="click" onClick={()=>setActiveMonth(m)}
@@ -1067,10 +1343,6 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
             }}>{m}</Btn>
         ))}
       </div>
-
-      {/* show %s spent on different sectors of budget */}
-
-      {/*
       <div className="flex flex-col gap-4">
         {data.map(item=>(
           <div key={item.id} className="bg-white rounded-2xl p-5 shadow-sm" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
@@ -1091,10 +1363,6 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
           </div>
         ))}
       </div>
-      */}
-
-      {/* ezbreez score */}
-
       <div className="rounded-2xl p-6" style={{ background:`linear-gradient(135deg,${P.navy} 0%,${P.teal} 100%)` }}>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -1111,51 +1379,9 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
         <div className="h-2.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.15)" }}>
           <div className="h-full rounded-full" style={{ width:"67%", background:P.mint }}/>
         </div>
-
-        {/* TODO */}
-        <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>+3 pts from last month</p>
+        <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>Good standing — +3 pts from last month</p>
       </div>
-
-      {/* Past decisions */}
-
-      {decisions.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
-            Past Analyses
-          </h2>
-          {decisions.map(d=>{
-            const color =
-              d.result.score >= 82 ? P.emerald :
-              d.result.score >= 67 ? P.teal :
-              d.result.score >= 50 ? "#D4A21A" :
-              d.result.score >= 33 ? "#E07B30" : "#C0574A";
-            return (
-              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
-                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
-                  style={{ background:`${color}15` }}>
-                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-                    {d.description}
-                  </p>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
-                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
-                  </div>
-                </div>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
-                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
-
   );
 }
 
@@ -1175,11 +1401,7 @@ function ScoreGauge({ score }: { score: number }) {
     score >= 33 ? "Risky" : "Avoid";
 
   return (
-
-      // GRAPH: SCORE GAUGE
-
     <div className="flex flex-col items-center gap-2">
-      {/**/}
       <div className="relative w-32 h-32 flex items-center justify-center rounded-full"
         style={{ background:`conic-gradient(${color} ${score}%, #EEF9F4 0%)` }}>
         <div className="w-24 h-24 rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
@@ -1341,6 +1563,44 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
               </ul>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Past decisions */}
+      {decisions.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
+            Past Analyses
+          </h2>
+          {decisions.map(d=>{
+            const color =
+              d.result.score >= 82 ? P.emerald :
+              d.result.score >= 67 ? P.teal :
+              d.result.score >= 50 ? "#D4A21A" :
+              d.result.score >= 33 ? "#E07B30" : "#C0574A";
+            return (
+              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
+                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
+                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
+                  style={{ background:`${color}15` }}>
+                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
+                    {d.description}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
+                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
+                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
