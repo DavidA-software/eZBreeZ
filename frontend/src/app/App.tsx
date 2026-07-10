@@ -908,8 +908,8 @@ function BudgetView({ budget, onChange, go }: { budget: BudgetData; onChange: (b
 // ═════════════════════════════════════════════════════════════════════════════
 // CHAT (Bree AI)
 // ═════════════════════════════════════════════════════════════════════════════
+/*
 const NOW_STR = () => new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
-
 function ChatView({ username, budget }: { username:string; budget:BudgetData }) {
   const uid = useRef(1);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1035,7 +1035,7 @@ function ChatView({ username, budget }: { username:string; budget:BudgetData }) 
     </div>
   );
 }
-
+*/
 // ═════════════════════════════════════════════════════════════════════════════
 // HISTORY (Connected to Spring Boot Backend Pipeline)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1294,9 +1294,8 @@ function ScoresView({ budget }: {budget: BudgetData}) {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
-  const [latest, setLatest] = useState<AnalyzedDecision|null>(null);
+  const [latest, setLatest] = useState<EzBrezScoreHistory|null>(null);
   const [error, setError] = useState("");
-  const uid = useRef(decisions.length + 1);
 
   const analyze = async () => {
     if (!description.trim()) return;
@@ -1323,30 +1322,7 @@ function ScoresView({ budget }: {budget: BudgetData}) {
 
       // result matches your Score.HistoryResponse object structure
       const result = await res.json();
-
-      // Map the backend payload fields into your React component view tracking
-      const decision: AnalyzedDecision = {
-        id: uid.current++,
-        description: description.trim(),
-        amount: parseFloat(amount) || 0,
-        result: {
-          score: result.score,
-          summary: result.mlDecision || "Analysis complete.",
-          // Safe array fallbacks for UI layout compatibility
-          pros: result.pros || ["Viable spending profile parameters matches income distribution."],
-          cons: result.cons || ["Review ongoing historical opportunity costs."]
-        },
-        date: new Date(),
-      };
-*/}
-
-      {/* there will be at most 20 decisions in display/kept in local storage at once */}
-
-      const updated = [...decisions, result].slice(0, 20);
-      // Keep up to 20 decisions inside active app state memory layout
-      const updated = [decision, ...decisions].slice(0, 20);
-      onDecisionsChange(updated);
-      setLatest(decision);
+      setLatest(result);
 
       // Clear input fields on successful response completion
       setDescription("");
@@ -1433,59 +1409,26 @@ function ScoresView({ budget }: {budget: BudgetData}) {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color:"#9CB8C8", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                    Latest Analysis — {`${latest.date.getDate()} ${MONTH_NAMES[latest.date.getMonth()]} ${latest.date.getFullYear()}`}
+                    Latest Analysis — {`${(new Date(latest.createdAt)).getDate()} ${MONTH_NAMES[(new Date(latest.createdAt)).getMonth()]} ${(new Date(latest.createdAt)).getFullYear()}`}
                   </p>
                   <p className="text-base font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-                    {latest.description.length > 80 ? latest.description.slice(0,80)+"..." : latest.description}
+                    {latest.mlDecision.length > 80 ? latest.mlDecision.slice(0,80)+"..." : latest.mlDecision}
                   </p>
-                  {latest.amount > 0 && (
+                  {latest.amountSpent > 0 && (
                       <p className="text-sm font-semibold mt-1" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>
-                        Amount: ${latest.amount.toLocaleString()}
+                        Amount: ${latest.amountSpent.toLocaleString()}
                       </p>
                   )}
                 </div>
-                <ScoreGauge score={latest.result.score} />
+                <ScoreGauge score={latest.score} />
               </div>
 
               <p className="text-sm leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#4A7080" }}>
-                {latest.result.summary}
+                {latest.mlDecision}
               </p>
 
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(87,204,153,0.06)", border:"1px solid rgba(87,204,153,0.2)" }}>
-                  <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
-                     style={{ color:P.emerald, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                    <CheckCircle size={13}/> Pros
-                  </p>
-                  <ul className="flex flex-col gap-2">
-                    {latest.result.pros.map((pro,i)=>(
-                        <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
-                            style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
-                          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:P.emerald }}/>
-                          {pro}
-                        </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(192,87,74,0.06)", border:"1px solid rgba(192,87,74,0.2)" }}>
-                  <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
-                     style={{ color:"#C0574A", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                    <XCircle size={13}/> Cons
-                  </p>
-                  <ul className="flex flex-col gap-2">
-                    {latest.result.cons.map((con,i)=>(
-                        <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
-                            style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
-                          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:"#C0574A" }}/>
-                          {con}
-                        </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
             </div>
         )}
-
       </div>
   );
 }
