@@ -335,66 +335,26 @@ function scoreDecision(description: string, amount: number, budget: BudgetData):
   return { score: baseScore, pros, cons, summary: `${label} — ${summaryTone}` };
 }
 
-// ─── Bree AI "brain" ──────────────────────────────────────────────────────────
-function getBreeResponse(input: string, budget: BudgetData, username: string): string {
-  const msg = input.toLowerCase().trim();
-  const income  = parseFloat(budget.income) || 5200;
-  const totalExp = budget.expenses.reduce((s, e) => s + (parseFloat(e.amount)||0), 0);
-  const saved    = income - totalExp;
-  const savedPct = Math.max(0, Math.round((saved / income) * 100));
-  const expList  = budget.expenses.map(e => `  - ${e.label}: $${parseFloat(e.amount).toLocaleString()}/mo`).join("\n");
+// ─── Bree AI "brain" (Piped through Spring Boot to Python ML) ───────────────
+async function getBreeResponse(input: string, budget: BudgetData, username: string): Promise<string> {
+  try {
+    const response = await fetch("http://localhost:8080/api/bree/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: input,
+        username: username || "User",
+        budget: budget // Sends full budget data so Python can parse it
+      }),
+    });
 
-  if (/\b(hi|hello|hey|howdy|sup|good morning|good evening)\b/.test(msg))
-    return `Hello ${username}. Quick snapshot: you are saving **$${saved.toLocaleString()}** (${savedPct}%) of your monthly income — ${savedPct >= 50 ? "well above average." : savedPct >= 20 ? "right on target." : "a good start."} What would you like to work on today?`;
+    if (!response.ok) throw new Error();
 
-  if (/score|rating|grade|rank|points/.test(msg)) {
-    const tips = savedPct < 30 ? "First priority is boosting your savings rate above 30%." : "Building a full emergency fund and automating transfers is your next lever.";
-    return `Your **eZBrez Score is 67/100**.\n\nTo push it higher:\n1. Build a 3-6 month emergency fund (~$${(totalExp * 4).toLocaleString()})\n2. ${tips}\n3. Keep all expense categories within their target ranges\n4. Avoid taking on new recurring debt\n\nAt your current savings rate you could realistically reach **80+ within 60 days**.`;
+    const data = await response.json();
+    return data.reply; // Expecting { "reply": "Grok's response text here" } from Python
+  } catch (error) {
+    return "I'm having trouble connecting to my financial brain waves. Is the Spring Boot or Python server down?";
   }
-
-  if (/sav(e|ing|ings?)|emergency fund|nest egg|rainy day/.test(msg)) {
-    const months3 = Math.ceil((totalExp * 3) / saved);
-    return `You are saving **$${saved.toLocaleString()}/mo (${savedPct}%)** — ${savedPct >= 50 ? "well above" : "above"} the recommended 20% rule.\n\nAt this rate:\n- 3-month emergency fund: **${months3} month${months3 !== 1 ? "s" : ""} away**\n- $10,000 goal: **${Math.ceil(10000/saved)} months away**\n\nConsider a high-yield savings account (currently 4-5% APY) to accelerate progress.`;
-  }
-
-  if (/spend(ing)?|expens(e|es|ive)?|cost|pay(ing|ment)?|bill|debt/.test(msg))
-    return `Your full expense breakdown:\n\n${expList}\n\n**Total: $${totalExp.toLocaleString()}/mo** (${Math.round((totalExp/income)*100)}% of income)\nYou retain **$${saved.toLocaleString()}/mo** after all expenses. Want tips on reducing a specific line item?`;
-
-  if (/food|groceries|eat(ing)?|restaurant|dining/.test(msg)) {
-    const foodExp = budget.expenses.find(e => /food|grocer|eat|restaurant/i.test(e.label));
-    const amt = foodExp ? parseFloat(foodExp.amount) : 350;
-    const foodPct = Math.round((amt/income)*100);
-    return `Your food-related spending is around **$${amt.toLocaleString()}/mo (${foodPct}% of income)**.\n\n${foodPct > 20 ? "This is slightly above the 15-20% target. Quick wins:" : "This is in a healthy range. To optimize further:"}\n- Meal prep 2-3 times per week saves approximately $80-120/mo\n- Set a weekly cash envelope budget for dining out\n- Grocery apps (Ibotta, Flipp) reduce spending by 8-15%\n\nEvery $50/mo reduction adds **$600/year** to your savings.`;
-  }
-
-  if (/car|loan|vehicle|auto|gas/.test(msg)) {
-    const carExp = budget.expenses.find(e => /car|loan|auto|vehicle/i.test(e.label));
-    const amt = carExp ? parseFloat(carExp.amount) : 400;
-    const carPct = Math.round((amt/income)*100);
-    return `Your car-related expenses are **$${amt.toLocaleString()}/mo (${carPct}% of income)**.\n\nThe guideline is to keep total vehicle costs under 15% of gross income (your ceiling: $${Math.round(income*0.15).toLocaleString()}/mo).\n\nYou are ${amt <= income*0.15 ? "within" : "slightly over"} that range.\n\nOptions: refinance if your rate exceeds 5%, compare insurance annually, and review whether a less expensive vehicle is feasible at renewal.`;
-  }
-
-  if (/income|earn(ing)?|salary|wage|pay(check)?|raise/.test(msg))
-    return `Your monthly income is **$${income.toLocaleString()}** ($${(income*12).toLocaleString()}/year).\n\nAllocation:\n- Expenses: $${totalExp.toLocaleString()} (${Math.round((totalExp/income)*100)}%)\n- Saved: $${saved.toLocaleString()} (${savedPct}%)\n\nA 5% raise adds $${Math.round(income*0.05).toLocaleString()}/mo. A $500/mo side income adds $6,000/year and meaningfully accelerates every financial goal.`;
-
-  if (/invest(ing|ment)?|stock|fund|retire|401k|ira/.test(msg)) {
-    const invest = Math.round(saved*0.5);
-    return `With $${saved.toLocaleString()}/mo available, investing makes sense.\n\nRecommended order:\n1. Max out employer 401k match — immediate 50-100% return\n2. Roth IRA — $500/mo up to $6,000/year limit\n3. Remaining — low-cost index funds (VTI, VXUS)\n\nIf you invest $${invest.toLocaleString()}/mo:\n- 10 years: ~$${Math.round(invest*12*10*1.7).toLocaleString()} at 7% average return\n- 20 years: ~$${Math.round(invest*12*20*2.6).toLocaleString()}\n\nTime in the market consistently outperforms timing the market.`;
-  }
-
-  if (/debt|credit card|owe|interest/.test(msg))
-    return `Debt management is one of the highest-leverage moves you can make.\n\n**Avalanche method** (minimizes total interest paid):\n1. List all debts by interest rate, highest first\n2. Pay minimums on all, direct extra cash at the highest-rate debt\n3. Roll that payment to the next debt when one is cleared\n\nWith $${saved.toLocaleString()}/mo saved, you have strong capacity to accelerate payoff. An extra $200/mo on a $5,000 balance at 20% APR eliminates it roughly 2 years sooner.`;
-
-  if (/budget|plan|financ|advice|tip|help|suggest|recommend/.test(msg))
-    return `Based on your profile — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate:\n\n**Next 30 days:**\n- Open a dedicated high-yield savings account\n- Automate a transfer of $${Math.round(saved*0.7).toLocaleString()} on each payday\n- Track all discretionary spending for one week\n\n**Next 90 days:**\n- Build $${(totalExp*2).toLocaleString()} in an emergency buffer\n- Audit and cancel unused subscriptions\n\nWhat specific goal do you want to focus on first?`;
-
-  const fallbacks = [
-    `Based on your budget — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate — you are well-positioned financially. I can help with savings strategy, expense reduction, investing basics, or debt management. What is on your mind?`,
-    `Based on your budget — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate — you are well-positioned financially. I can help with savings strategy, expense reduction, investing basics, or debt management. What is on your mind?`,
-    `At a ${savedPct}% savings rate, your next move is building a buffer so that no unexpected expense derails your progress. Would you like me to calculate how long that would take at your current pace?`,
-    `Your fundamentals are strong. The gap between where you are and financial security is mostly consistency. What is the one financial goal you most want to reach in the next six months?`,
-  ];
-  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 }
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
@@ -1541,208 +1501,194 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
   const [amount, setAmount] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [latest, setLatest] = useState<AnalyzedDecision|null>(null);
+  const [error, setError] = useState("");
   const uid = useRef(decisions.length + 1);
 
-  const analyze = () => {
+  const analyze = async () => {
     if (!description.trim()) return;
+
+    setError("");
     playSound("confirm");
     setAnalyzing(true);
-    setTimeout(() => {
-      const result = scoreDecision(description, parseFloat(amount)||0, budget);
-      const decision: AnalyzedDecision = {
-        id: uid.current++,
-        description: description.trim(),
-        amount: parseFloat(amount)||0,
-        result,
-        date: new Date(),
-      };
-      const updated = [decision, ...decisions].slice(0, 20);
-      onDecisionsChange(updated);
-      setLatest(decision);
-      setDescription("");
-      setAmount("");
-      setAnalyzing(false);
-    }, 1000 + Math.random() * 800);
-  };
 
-  const  [error, setError] = useState("");
-
-{/*
-  const handleInput = async () => {
-    setError("");
-    const userId = localStorage.getItem("userId");
-    if (!userId) {
-      setError("Not logged in");
-      return;
-    }
-
+    // Build payload matching your MlRequest.java backend DTO
     const payload = {
-      userId: parseInt(userId),
-      description: description || "",
-      amount: parseFloat(budget.income) || 0,
-      },
-
-    setAnalyzing(true);
+      description: description.trim(),
+      amount: parseFloat(amount) || 0.0
+    };
 
     try {
-      const res = await fetch("http://localhost:8081/api/", {
+      // Connects directly to your spring boot endpoint
+      const res = await fetch("http://localhost:8080/api/ml/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to save ");
+
+      if (!res.ok) throw new Error("ML analysis service pipeline returned an error.");
+
+      // result matches your Score.HistoryResponse object structure
       const result = await res.json();
 
+      // Map the backend payload fields into your React component view tracking
       const decision: AnalyzedDecision = {
         id: uid.current++,
         description: description.trim(),
-        amount: parseFloat(amount)||0,
-        result,
+        amount: parseFloat(amount) || 0,
+        result: {
+          score: result.score,
+          summary: result.mlDecision || "Analysis complete.",
+          // Safe array fallbacks for UI layout compatibility
+          pros: result.pros || ["Viable spending profile parameters matches income distribution."],
+          cons: result.cons || ["Review ongoing historical opportunity costs."]
+        },
         date: new Date(),
       };
-*/}
 
-      {/* there will be at most 20 decisions in display/kept in local storage at once */}
-{/*
+      // Keep up to 20 decisions inside active app state memory layout
       const updated = [decision, ...decisions].slice(0, 20);
       onDecisionsChange(updated);
       setLatest(decision);
 
+      // Clear input fields on successful response completion
+      setDescription("");
       setAmount("");
-      setAnalyzing(false);
-
-
     } catch (err: any) {
-      setError(err.message || "Something went wrong getting a response.");
+      console.error(err);
+      setError(err.message || "Failed to process decision metrics.");
     } finally {
       setAnalyzing(false);
     }
   };
 
-*/}
-
-
   return (
-    <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>EZBREZ Scores</h1>
-        <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>
-          Describe any financial decision and receive an AI-generated pros, cons, and a 1-100 score.
-        </p>
-      </div>
-
-      {/* Input card */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-5" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-        <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
-          Analyze a Decision
-        </h2>
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
-            Describe the financial decision
-          </label>
-          <textarea
-            value={description}
-            onChange={e=>setDescription(e.target.value)}
-            placeholder="e.g. I am considering buying a new car for $28,000. I currently drive an older vehicle with high maintenance costs..."
-            rows={4}
-            className="w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none"
-            style={{
-              fontFamily:"'DM Sans',sans-serif", color:P.dark,
-              borderColor:"rgba(34,87,122,0.18)", lineHeight:1.6,
-            }}
-            onFocus={e=>{e.target.style.borderColor=P.teal; e.target.style.boxShadow=`0 0 0 3px ${P.foam}`;}}
-            onBlur={e=>{e.target.style.borderColor="rgba(34,87,122,0.18)"; e.target.style.boxShadow="none";}}
-          />
+      <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>EZBREZ Scores</h1>
+          <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>
+            Describe any financial decision and receive an AI-generated pros, cons, and a 1-100 score.
+          </p>
         </div>
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
-            Amount involved
-          </label>
-          <div className="flex items-center gap-2 rounded-xl border px-4 py-2.5 w-48"
-            style={{ borderColor:"rgba(34,87,122,0.18)" }}>
-            <span className="font-bold text-sm" style={{ color:P.teal }}>$</span>
-            <input
-              type="number" value={amount} onChange={e=>setAmount(e.target.value)}
-              placeholder="0"
-              className="flex-1 outline-none text-sm font-semibold bg-transparent"
-              style={{ color:P.dark, fontFamily:"'DM Sans',sans-serif" }}
+
+        {/* Input card */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-5" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
+          <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
+            Analyze a Decision
+          </h2>
+
+          {error && (
+              <p className="text-xs font-semibold text-red-500 bg-red-50 p-3 rounded-xl border border-red-100">
+                {error}
+              </p>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
+              Describe the financial decision
+            </label>
+            <textarea
+                value={description}
+                onChange={e=>setDescription(e.target.value)}
+                placeholder="e.g. I am considering buying a new car for $28,000. I currently drive an older vehicle with high maintenance costs..."
+                rows={4}
+                className="w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none"
+                style={{
+                  fontFamily:"'DM Sans',sans-serif", color:P.dark,
+                  borderColor:"rgba(34,87,122,0.18)", lineHeight:1.6,
+                }}
+                onFocus={e=>{e.target.style.borderColor=P.teal; e.target.style.boxShadow=`0 0 0 3px ${P.foam}`;}}
+                onBlur={e=>{e.target.style.borderColor="rgba(34,87,122,0.18)"; e.target.style.boxShadow="none";}}
             />
           </div>
-        </div>
-        <PrimaryBtn onClick={analyze} disabled={analyzing||!description.trim()}>
-          {analyzing ? (
-            <span className="flex items-center gap-2">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
+              Amount involved
+            </label>
+            <div className="flex items-center gap-2 rounded-xl border px-4 py-2.5 w-48"
+                 style={{ borderColor:"rgba(34,87,122,0.18)" }}>
+              <span className="font-bold text-sm" style={{ color:P.teal }}>$</span>
+              <input
+                  type="number" value={amount} onChange={e=>setAmount(e.target.value)}
+                  placeholder="0"
+                  className="flex-1 outline-none text-sm font-semibold bg-transparent"
+                  style={{ color:P.dark, fontFamily:"'DM Sans',sans-serif" }}
+              />
+            </div>
+          </div>
+          <PrimaryBtn onClick={analyze} disabled={analyzing||!description.trim()}>
+            {analyzing ? (
+                <span className="flex items-center gap-2">
               {[0,1,2].map(i=>(
-                <span key={i} className="w-1.5 h-1.5 rounded-full bg-white animate-bounce" style={{ animationDelay:`${i*0.15}s` }}/>
+                  <span key={i} className="w-1.5 h-1.5 rounded-full bg-white animate-bounce" style={{ animationDelay:`${i*0.15}s` }}/>
               ))}
-              Analyzing...
+                  Analyzing...
             </span>
-          ) : (
-            <span className="flex items-center gap-2"><Award size={15}/> Analyze Decision</span>
-          )}
-        </PrimaryBtn>
-      </div>
-
-      {/* Latest result */}
-      {latest && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-6" style={{ border:`2px solid ${P.emerald}40` }}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color:"#9CB8C8", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                Latest Analysis — {`${latest.date.getDate()} ${MONTH_NAMES[latest.date.getMonth()]} ${latest.date.getFullYear()}`}
-              </p>
-              <p className="text-base font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-                {latest.description.length > 80 ? latest.description.slice(0,80)+"..." : latest.description}
-              </p>
-              {latest.amount > 0 && (
-                <p className="text-sm font-semibold mt-1" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>
-                  Amount: ${latest.amount.toLocaleString()}
-                </p>
-              )}
-            </div>
-            <ScoreGauge score={latest.result.score} />
-          </div>
-
-          <p className="text-sm leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#4A7080" }}>
-            {latest.result.summary}
-          </p>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(87,204,153,0.06)", border:"1px solid rgba(87,204,153,0.2)" }}>
-              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
-                style={{ color:P.emerald, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                <CheckCircle size={13}/> Pros
-              </p>
-              <ul className="flex flex-col gap-2">
-                {latest.result.pros.map((pro,i)=>(
-                  <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
-                    style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
-                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:P.emerald }}/>
-                    {pro}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(192,87,74,0.06)", border:"1px solid rgba(192,87,74,0.2)" }}>
-              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
-                style={{ color:"#C0574A", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                <XCircle size={13}/> Cons
-              </p>
-              <ul className="flex flex-col gap-2">
-                {latest.result.cons.map((con,i)=>(
-                  <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
-                    style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
-                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:"#C0574A" }}/>
-                    {con}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+            ) : (
+                <span className="flex items-center gap-2"><Award size={15}/> Analyze Decision</span>
+            )}
+          </PrimaryBtn>
         </div>
-      )}
 
-    </div>
+        {/* Latest result */}
+        {latest && (
+            <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-6" style={{ border:`2px solid ${P.emerald}40` }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color:"#9CB8C8", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    Latest Analysis — {`${latest.date.getDate()} ${MONTH_NAMES[latest.date.getMonth()]} ${latest.date.getFullYear()}`}
+                  </p>
+                  <p className="text-base font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
+                    {latest.description.length > 80 ? latest.description.slice(0,80)+"..." : latest.description}
+                  </p>
+                  {latest.amount > 0 && (
+                      <p className="text-sm font-semibold mt-1" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>
+                        Amount: ${latest.amount.toLocaleString()}
+                      </p>
+                  )}
+                </div>
+                <ScoreGauge score={latest.result.score} />
+              </div>
+
+              <p className="text-sm leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#4A7080" }}>
+                {latest.result.summary}
+              </p>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(87,204,153,0.06)", border:"1px solid rgba(87,204,153,0.2)" }}>
+                  <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                     style={{ color:P.emerald, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    <CheckCircle size={13}/> Pros
+                  </p>
+                  <ul className="flex flex-col gap-2">
+                    {latest.result.pros.map((pro,i)=>(
+                        <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
+                            style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
+                          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:P.emerald }}/>
+                          {pro}
+                        </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(192,87,74,0.06)", border:"1px solid rgba(192,87,74,0.2)" }}>
+                  <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                     style={{ color:"#C0574A", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    <XCircle size={13}/> Cons
+                  </p>
+                  <ul className="flex flex-col gap-2">
+                    {latest.result.cons.map((con,i)=>(
+                        <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
+                            style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
+                          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:"#C0574A" }}/>
+                          {con}
+                        </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+        )}
+
+      </div>
   );
 }
 
