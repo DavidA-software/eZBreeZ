@@ -1445,7 +1445,7 @@ function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], 
                   </p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
-                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
+                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{`${d.date.getDate()} ${MONTH_NAMES[d.date.getMonth()]} ${d.date.getFullYear()}`}</span>
                   </div>
                 </div>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
@@ -1647,7 +1647,7 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color:"#9CB8C8", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                Latest Analysis — {latest.date}
+                Latest Analysis — {`${latest.date.getDate()} ${MONTH_NAMES[latest.date.getMonth()]} ${latest.date.getFullYear()}`}
               </p>
               <p className="text-base font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
                 {latest.description.length > 80 ? latest.description.slice(0,80)+"..." : latest.description}
