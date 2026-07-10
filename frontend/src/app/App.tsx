@@ -61,6 +61,8 @@ const LS = {
   userExists:   (username: string) => LS.users().some(u => u.username.toLowerCase() === username.toLowerCase()),
   saveBudget:   (u: string, d: BudgetData)          => localStorage.setItem(`ez_budget_${u}`, JSON.stringify(d)),
   loadBudget:   (u: string): BudgetData | null       => JSON.parse(localStorage.getItem(`ez_budget_${u}`) || "null"),
+  saveDecisions:(u: string, d: AnalyzedDecision[])   => localStorage.setItem(`ez_decisions_${u}`, JSON.stringify(d)),
+  loadDecisions:(u: string): AnalyzedDecision[]      => JSON.parse(localStorage.getItem(`ez_decisions_${u}`) || "[]"),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -71,6 +73,20 @@ interface Expense  { id: number; label: string; amount: string; period: "Month"|
 interface BudgetData { income: string; period: "Month"|"Year"; expenses: Expense[] }
 interface Msg { id: number; text: string; from: "ai"|"user"; time: string }
 
+interface DecisionResult {
+  score: number;
+  summary: string;
+  pros: string[];
+  cons: string[];
+}
+interface AnalyzedDecision {
+  id: number;
+  description: string;
+  amount: number;
+  result: DecisionResult;
+  date: Date;
+}
+
 const DEFAULT_BUDGET: BudgetData = {
   income: "5200", period: "Month",
   expenses: [
@@ -79,6 +95,313 @@ const DEFAULT_BUDGET: BudgetData = {
     { id: 3, label: "Groceries", amount: "350",  period: "Month" },
   ],
 };
+
+
+// calculate ezbreez score + add , decisions: Date 
+function ezbreezScore(decisions: AnalyzedDecision[], month: Date) {
+
+  const targetYear = month.getFullYear();
+  const targetMonth = month.getMonth();
+
+  const matching = decisions.filter(
+    (entry) =>
+      entry.date.getFullYear() === targetYear &&
+      entry.date.getMonth() === targetMonth
+  );
+
+  if (matching.length === 0) {
+    return 0;
+  }
+
+  const total = matching.reduce((sum, entry) => sum + entry.result.score, 0);
+  return total / matching.length;
+}
+
+function getMonths(entries: AnalyzedDecision[]): Date[] {
+  const months: Date[] = [];
+  let currentYear: number | null = null;
+  let currentMonth: number | null = null;
+
+  for (const entry of entries) {
+    const year = entry.date.getFullYear();
+    const month = entry.date.getMonth();
+
+    if (year !== currentYear || month !== currentMonth) {
+      months.push(new Date(year, month, 1));
+      currentYear = year;
+      currentMonth = month;
+    }
+
+  }
+
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const last = months[months.length - 1];
+  const alreadyIncluded =
+    last &&
+    last.getFullYear() === currentMonthStart.getFullYear() &&
+    last.getMonth() === currentMonthStart.getMonth();
+
+  return alreadyIncluded ? months : [...months, currentMonthStart];
+}
+
+// ─── Financial Decision Scorer AI ─────────────────────────────────────────────
+function scoreDecision(description: string, amount: number, budget: BudgetData): DecisionResult {
+  const desc = description.toLowerCase();
+  const income = parseFloat(budget.income) || 5200;
+  const totalExp = budget.expenses.reduce((s, e) => s + (parseFloat(e.amount)||0), 0);
+  const saved = income - totalExp;
+  const amtRatio = amount / income; // relative to monthly income
+
+  const is = (pattern: RegExp) => pattern.test(desc);
+
+  const isDebtPayoff    = is(/pay(ing)?\s*(off|down)|debt\s*free|payoff|pay off/);
+  const isInvesting     = is(/invest|stock|fund|index|401k|ira|roth|etf|bond|dividend/);
+  const isCrypto        = is(/crypto|bitcoin|ethereum|nft|altcoin|token|coin|defi/);
+  const isEmergency     = is(/emergency|buffer|safety net/);
+  const isSavings       = is(/sav(e|ing)|high.yield|savings account|cd |certificate/);
+  const isHome          = is(/home|house|property|mortgage|real estate|condo/);
+  const isEducation     = is(/school|college|education|degree|course|training|certif|bootcamp/);
+  const isCarNew        = is(/new car|new vehicle|new truck/);
+  const isCar           = is(/car|vehicle|auto|truck/) && !isCarNew;
+  const isVacation      = is(/vacation|holiday|trip|travel|cruise|resort/);
+  const isLuxury        = is(/luxury|jewel|designer|watch|yacht|boat|jewelry/);
+  const isBusiness      = is(/business|startup|entrepreneur|franchise|side hustle/);
+  const isInsurance     = is(/insurance|life insurance|protect|coverage/);
+  const isRenovation    = is(/renovate|renovation|home improvement|kitchen|bathroom|remodel/);
+  const isGambling      = is(/gambl|casino|bet|lottery|poker/);
+  const isRetirement    = is(/retire|pension|annuity/);
+
+  let baseScore = 55;
+  const pros: string[] = [];
+  const cons: string[] = [];
+
+  if (isGambling) {
+    baseScore = 8;
+    pros.push("Entertainment value in controlled, budgeted amounts");
+    cons.push("Expected return is mathematically negative");
+    cons.push("High risk of losing the entire amount");
+    cons.push("Can develop into compulsive behavior");
+    cons.push("No wealth-building potential");
+  } else if (isCrypto) {
+    baseScore = 30;
+    pros.push("High upside potential if market moves favorably");
+    pros.push("Provides portfolio diversification from traditional assets");
+    cons.push("Extreme volatility — drops of 50-80% are common");
+    cons.push("No underlying cash flows or earnings to anchor value");
+    cons.push("Regulatory uncertainty creates additional risk");
+    cons.push("Not a recommended core financial strategy");
+    if (amtRatio > 0.5) cons.push("Amount is large relative to income — limit speculative holdings to under 5% of net worth");
+  } else if (isEmergency) {
+    baseScore = 93;
+    pros.push("Foundational financial safety net against unexpected events");
+    pros.push("Prevents going into high-interest debt during emergencies");
+    pros.push("Fully liquid and FDIC insured");
+    pros.push("Reduces financial stress and improves decision-making");
+    cons.push("Savings account yields less than long-term equity investing");
+    cons.push("Inflation gradually erodes purchasing power of idle cash");
+  } else if (isRetirement) {
+    baseScore = 92;
+    pros.push("Tax-advantaged growth significantly accelerates wealth accumulation");
+    pros.push("Employer match (if available) is an immediate 50-100% return");
+    pros.push("Compound interest over decades creates substantial wealth");
+    pros.push("Reduces current taxable income");
+    cons.push("Funds are locked until retirement age (59.5) without penalty");
+    cons.push("Annual contribution limits apply");
+  } else if (isDebtPayoff) {
+    baseScore = 90;
+    pros.push("Guaranteed return equal to the interest rate on the debt");
+    pros.push("Improves credit utilization ratio and credit score");
+    pros.push("Reduces monthly obligations and increases cash flow");
+    pros.push("Eliminates financial stress associated with carrying debt");
+    cons.push("Reduces liquid cash reserves in the short term");
+    if (amtRatio > 3) cons.push("Large payment — ensure you maintain a 3-month emergency fund before fully paying off");
+  } else if (isInvesting) {
+    baseScore = 83;
+    pros.push("Compound growth builds wealth substantially over time");
+    pros.push("Historically equities return 7-10% annually over the long run");
+    pros.push("Index funds provide diversification at low cost");
+    if (amtRatio <= 1) pros.push("Amount is proportionate and manageable relative to your income");
+    cons.push("Market volatility means short-term value can decrease");
+    cons.push("Capital is less accessible while invested");
+    if (amtRatio > 4) cons.push("Confirm your emergency fund (3-6 months of expenses) is funded before committing large sums");
+  } else if (isSavings) {
+    baseScore = 82;
+    pros.push("High-yield accounts currently earn 4-5% APY");
+    pros.push("Fully liquid — funds accessible at any time");
+    pros.push("FDIC insured up to $250,000");
+    pros.push("No market risk");
+    cons.push("Returns are lower than long-term equity investing");
+    cons.push("Inflation can erode real purchasing power over time");
+  } else if (isHome) {
+    baseScore = amtRatio <= 36 ? 73 : 56;
+    pros.push("Builds equity over time rather than renting");
+    pros.push("Potential for long-term property appreciation");
+    pros.push("Stability and control over your living environment");
+    pros.push("Mortgage interest may be tax-deductible");
+    cons.push("Illiquid asset — difficult to sell quickly");
+    cons.push("Additional costs: property tax, insurance, maintenance (1-3% of value annually)");
+    if (amtRatio > 36) cons.push("Purchase price appears high relative to income — review debt-to-income ratio carefully");
+  } else if (isEducation) {
+    baseScore = 77;
+    pros.push("Increases lifetime earning potential and career opportunities");
+    pros.push("Skills and credentials provide durable long-term value");
+    pros.push("May qualify for education tax credits");
+    cons.push("Financial return varies by field and job market conditions");
+    cons.push("Upfront cost with a delayed financial payoff period");
+    if (amtRatio > 6) cons.push("Consider carefully whether student loans are preferable to depleting savings");
+  } else if (isCarNew) {
+    baseScore = 46;
+    pros.push("Comes with full manufacturer warranty and latest safety features");
+    pros.push("Lower initial maintenance costs and higher reliability");
+    pros.push("Better financing rates typically available on new vehicles");
+    cons.push("Depreciates 15-25% in the first year alone");
+    cons.push("Higher insurance premiums than equivalent used vehicles");
+    cons.push("Total cost of ownership significantly exceeds a comparable used car");
+    if (amount > income * 0.15 * 12) cons.push("Monthly payments may exceed the recommended 15% of monthly income guideline");
+  } else if (isCar) {
+    baseScore = 61;
+    pros.push("Lower purchase price and reduced depreciation impact");
+    pros.push("Lower insurance costs than new vehicles");
+    pros.push("Certified pre-owned options provide warranty coverage");
+    cons.push("Higher potential maintenance and repair costs");
+    cons.push("Less predictable reliability without full vehicle history");
+    if (amount > income * 0.12 * 12) cons.push("Ensure total monthly car costs (payment + insurance + fuel) stay under 15% of income");
+  } else if (isVacation) {
+    baseScore = amtRatio <= 0.5 ? 63 : 47;
+    pros.push("Mental health and well-being benefits are well-documented");
+    pros.push("Experiences and memories provide lasting value");
+    if (amtRatio <= 0.5) pros.push("Amount is reasonable relative to your monthly income");
+    cons.push("No financial return — entirely a consumption expense");
+    cons.push("Same funds invested would compound significantly over time");
+    if (amtRatio > 0.5) cons.push("Amount is significant — consider a more budget-friendly itinerary");
+    if (amtRatio > 1) cons.push("Exceeds one month of income — review whether this fits your savings goals");
+  } else if (isLuxury) {
+    baseScore = 27;
+    pros.push("Personal enjoyment and satisfaction");
+    pros.push("Certain items (art, specific watches) may retain or appreciate in value");
+    cons.push("Depreciates rapidly — resale value is typically a fraction of purchase price");
+    cons.push("High opportunity cost relative to investing or debt repayment");
+    cons.push("Does not improve financial health or future security");
+    if (amtRatio > 1) cons.push("Represents more than one month of income — consider whether this serves your long-term plan");
+  } else if (isBusiness) {
+    baseScore = 64;
+    pros.push("Potential for significant income generation and wealth creation");
+    pros.push("Business ownership provides tax advantages not available to employees");
+    pros.push("Builds an asset that can be sold or generate passive income");
+    cons.push("Approximately 50% of businesses fail within the first five years");
+    cons.push("Capital is at risk with no guaranteed return");
+    cons.push("Requires time investment well beyond the initial financial cost");
+    if (amtRatio > 2) cons.push("Large commitment — ensure personal finances are stable before investing this amount");
+  } else if (isInsurance) {
+    baseScore = 85;
+    pros.push("Protects against catastrophic financial loss");
+    pros.push("Provides financial security for dependents and long-term planning");
+    pros.push("Premiums may be tax-deductible depending on type");
+    cons.push("Ongoing premium expense with no direct financial return if unused");
+    cons.push("Policies vary significantly — review coverage terms carefully");
+  } else if (isRenovation) {
+    baseScore = 67;
+    pros.push("Increases property value and quality of living");
+    pros.push("Kitchen and bathroom renovations typically return 60-80% of cost on resale");
+    pros.push("May improve energy efficiency and reduce ongoing utility costs");
+    cons.push("Renovation costs frequently exceed initial estimates by 10-30%");
+    cons.push("Return on investment depends heavily on local real estate conditions");
+    if (amtRatio > 3) cons.push("Large project — obtain multiple contractor quotes before committing");
+  } else {
+    // Generic fallback
+    baseScore = 55;
+    pros.push("You are evaluating the decision before committing — a strong financial habit");
+    pros.push("If it meets a genuine need, it can be a sound use of funds");
+    cons.push("Opportunity cost — same funds could serve higher-priority financial goals");
+    cons.push("Ensure this decision is consistent with your overall budget and savings targets");
+    if (amtRatio > 2) cons.push("Amount is substantial relative to income — consider phasing or scaling down");
+  }
+
+  // Adjust score for outsized amounts
+  if (amtRatio > 6 && baseScore > 50) baseScore = Math.max(baseScore - 10, 40);
+  if (amtRatio > 12 && baseScore > 50) baseScore = Math.max(baseScore - 5, 35);
+  if (amount <= 0) baseScore = 50;
+  baseScore = Math.min(100, Math.max(1, baseScore));
+
+  const label =
+    baseScore >= 82 ? "Excellent" :
+    baseScore >= 67 ? "Good" :
+    baseScore >= 50 ? "Moderate" :
+    baseScore >= 33 ? "Risky" : "Avoid";
+
+  const summaryTone =
+    baseScore >= 82 ? "This is a financially sound decision that aligns well with wealth-building principles." :
+    baseScore >= 67 ? "This is a reasonable decision with some important considerations to keep in mind." :
+    baseScore >= 50 ? "This decision has merit but carries notable risks worth weighing carefully." :
+    baseScore >= 33 ? "This carries significant financial risk. Carefully review the cons before proceeding." :
+    "This decision poses serious financial risk. Consider alternatives before committing.";
+
+  return { score: baseScore, pros, cons, summary: `${label} — ${summaryTone}` };
+}
+
+// ─── Bree AI "brain" ──────────────────────────────────────────────────────────
+function getBreeResponse(input: string, budget: BudgetData, username: string): string {
+  const msg = input.toLowerCase().trim();
+  const income  = parseFloat(budget.income) || 5200;
+  const totalExp = budget.expenses.reduce((s, e) => s + (parseFloat(e.amount)||0), 0);
+  const saved    = income - totalExp;
+  const savedPct = Math.max(0, Math.round((saved / income) * 100));
+  const expList  = budget.expenses.map(e => `  - ${e.label}: $${parseFloat(e.amount).toLocaleString()}/mo`).join("\n");
+
+  if (/\b(hi|hello|hey|howdy|sup|good morning|good evening)\b/.test(msg))
+    return `Hello ${username}. Quick snapshot: you are saving **$${saved.toLocaleString()}** (${savedPct}%) of your monthly income — ${savedPct >= 50 ? "well above average." : savedPct >= 20 ? "right on target." : "a good start."} What would you like to work on today?`;
+
+  if (/score|rating|grade|rank|points/.test(msg)) {
+    const tips = savedPct < 30 ? "First priority is boosting your savings rate above 30%." : "Building a full emergency fund and automating transfers is your next lever.";
+    return `Your **eZBrez Score is 67/100**.\n\nTo push it higher:\n1. Build a 3-6 month emergency fund (~$${(totalExp * 4).toLocaleString()})\n2. ${tips}\n3. Keep all expense categories within their target ranges\n4. Avoid taking on new recurring debt\n\nAt your current savings rate you could realistically reach **80+ within 60 days**.`;
+  }
+
+  if (/sav(e|ing|ings?)|emergency fund|nest egg|rainy day/.test(msg)) {
+    const months3 = Math.ceil((totalExp * 3) / saved);
+    return `You are saving **$${saved.toLocaleString()}/mo (${savedPct}%)** — ${savedPct >= 50 ? "well above" : "above"} the recommended 20% rule.\n\nAt this rate:\n- 3-month emergency fund: **${months3} month${months3 !== 1 ? "s" : ""} away**\n- $10,000 goal: **${Math.ceil(10000/saved)} months away**\n\nConsider a high-yield savings account (currently 4-5% APY) to accelerate progress.`;
+  }
+
+  if (/spend(ing)?|expens(e|es|ive)?|cost|pay(ing|ment)?|bill|debt/.test(msg))
+    return `Your full expense breakdown:\n\n${expList}\n\n**Total: $${totalExp.toLocaleString()}/mo** (${Math.round((totalExp/income)*100)}% of income)\nYou retain **$${saved.toLocaleString()}/mo** after all expenses. Want tips on reducing a specific line item?`;
+
+  if (/food|groceries|eat(ing)?|restaurant|dining/.test(msg)) {
+    const foodExp = budget.expenses.find(e => /food|grocer|eat|restaurant/i.test(e.label));
+    const amt = foodExp ? parseFloat(foodExp.amount) : 350;
+    const foodPct = Math.round((amt/income)*100);
+    return `Your food-related spending is around **$${amt.toLocaleString()}/mo (${foodPct}% of income)**.\n\n${foodPct > 20 ? "This is slightly above the 15-20% target. Quick wins:" : "This is in a healthy range. To optimize further:"}\n- Meal prep 2-3 times per week saves approximately $80-120/mo\n- Set a weekly cash envelope budget for dining out\n- Grocery apps (Ibotta, Flipp) reduce spending by 8-15%\n\nEvery $50/mo reduction adds **$600/year** to your savings.`;
+  }
+
+  if (/car|loan|vehicle|auto|gas/.test(msg)) {
+    const carExp = budget.expenses.find(e => /car|loan|auto|vehicle/i.test(e.label));
+    const amt = carExp ? parseFloat(carExp.amount) : 400;
+    const carPct = Math.round((amt/income)*100);
+    return `Your car-related expenses are **$${amt.toLocaleString()}/mo (${carPct}% of income)**.\n\nThe guideline is to keep total vehicle costs under 15% of gross income (your ceiling: $${Math.round(income*0.15).toLocaleString()}/mo).\n\nYou are ${amt <= income*0.15 ? "within" : "slightly over"} that range.\n\nOptions: refinance if your rate exceeds 5%, compare insurance annually, and review whether a less expensive vehicle is feasible at renewal.`;
+  }
+
+  if (/income|earn(ing)?|salary|wage|pay(check)?|raise/.test(msg))
+    return `Your monthly income is **$${income.toLocaleString()}** ($${(income*12).toLocaleString()}/year).\n\nAllocation:\n- Expenses: $${totalExp.toLocaleString()} (${Math.round((totalExp/income)*100)}%)\n- Saved: $${saved.toLocaleString()} (${savedPct}%)\n\nA 5% raise adds $${Math.round(income*0.05).toLocaleString()}/mo. A $500/mo side income adds $6,000/year and meaningfully accelerates every financial goal.`;
+
+  if (/invest(ing|ment)?|stock|fund|retire|401k|ira/.test(msg)) {
+    const invest = Math.round(saved*0.5);
+    return `With $${saved.toLocaleString()}/mo available, investing makes sense.\n\nRecommended order:\n1. Max out employer 401k match — immediate 50-100% return\n2. Roth IRA — $500/mo up to $6,000/year limit\n3. Remaining — low-cost index funds (VTI, VXUS)\n\nIf you invest $${invest.toLocaleString()}/mo:\n- 10 years: ~$${Math.round(invest*12*10*1.7).toLocaleString()} at 7% average return\n- 20 years: ~$${Math.round(invest*12*20*2.6).toLocaleString()}\n\nTime in the market consistently outperforms timing the market.`;
+  }
+
+  if (/debt|credit card|owe|interest/.test(msg))
+    return `Debt management is one of the highest-leverage moves you can make.\n\n**Avalanche method** (minimizes total interest paid):\n1. List all debts by interest rate, highest first\n2. Pay minimums on all, direct extra cash at the highest-rate debt\n3. Roll that payment to the next debt when one is cleared\n\nWith $${saved.toLocaleString()}/mo saved, you have strong capacity to accelerate payoff. An extra $200/mo on a $5,000 balance at 20% APR eliminates it roughly 2 years sooner.`;
+
+  if (/budget|plan|financ|advice|tip|help|suggest|recommend/.test(msg))
+    return `Based on your profile — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate:\n\n**Next 30 days:**\n- Open a dedicated high-yield savings account\n- Automate a transfer of $${Math.round(saved*0.7).toLocaleString()} on each payday\n- Track all discretionary spending for one week\n\n**Next 90 days:**\n- Build $${(totalExp*2).toLocaleString()} in an emergency buffer\n- Audit and cancel unused subscriptions\n\nWhat specific goal do you want to focus on first?`;
+
+  const fallbacks = [
+    `Based on your budget — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate — you are well-positioned financially. I can help with savings strategy, expense reduction, investing basics, or debt management. What is on your mind?`,
+    `Based on your budget — $${income.toLocaleString()}/mo income, ${savedPct}% savings rate — you are well-positioned financially. I can help with savings strategy, expense reduction, investing basics, or debt management. What is on your mind?`,
+    `At a ${savedPct}% savings rate, your next move is building a buffer so that no unexpected expense derails your progress. Would you like me to calculate how long that would take at your current pace?`,
+    `Your fundamentals are strong. The gap between where you are and financial security is mostly consistency. What is the one financial goal you most want to reach in the next six months?`,
+  ];
+  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+}
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 function Logo({ inv = false, size = "text-3xl" }: { inv?: boolean; size?: string }) {
@@ -325,9 +648,10 @@ const NAV_ITEMS: { screen: Screen; label: string; icon: React.ReactNode }[] = [
   { screen: "scores",    label: "EZBREZ Scores", icon: <Award size={18}/> },
 ];
 
-function Sidebar({ active, go, username, onLogout, onClose }: {
-  active: Screen; go: (s: Screen) => void; username: string; onLogout: ()=>void; onClose?: ()=>void
+function Sidebar({ active, go, username, onLogout, onClose, userScore }: {
+  userScore: number; active: Screen; go: (s: Screen) => void; username: string; onLogout: ()=>void; onClose?: ()=>void
 }) {
+    console.log(userScore);
   return (
     <div className="flex flex-col h-full py-6 px-4" style={{ background: P.navy }}>
       <div className="flex items-center justify-between px-2 mb-8">
@@ -342,7 +666,7 @@ function Sidebar({ active, go, username, onLogout, onClose }: {
           </div>
           <div>
             <p className="text-xs font-bold text-white" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{username}</p>
-            {/*<p className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Score {userScore}/100</p> */}
+            <p className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Score {userScore}/100</p>
           </div>
         </div>
       )}
@@ -379,20 +703,22 @@ function Sidebar({ active, go, username, onLogout, onClose }: {
   );
 }
 
-function AppLayout({ screen, go, username, budget, onBudgetChange, onLogout }: {
+function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, onDecisionsChange, onLogout }: {
   screen: Screen; go: (s: Screen) => void; username: string;
   budget: BudgetData; onBudgetChange: (b: BudgetData) => void;
+  decisions: AnalyzedDecision[]; onDecisionsChange: (d: AnalyzedDecision[]) => void;
   onLogout: () => void;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const userScore = ezbreezScore(decisions, new Date);
   return (
     <div className="size-full flex overflow-hidden" style={{ background: P.bg }}>
       <aside className="hidden md:flex flex-col w-60 shrink-0 overflow-y-auto">
-        <Sidebar active={screen} go={go} username={username} onLogout={onLogout} />
+        <Sidebar active={screen} go={go} username={username} onLogout={onLogout} userScore={userScore} />
       </aside>
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="w-64 h-full"><Sidebar active={screen} go={go} username={username} onLogout={onLogout} onClose={() => setSidebarOpen(false)} /></div>
+          <div className="w-64 h-full"><Sidebar active={screen} go={go} username={username} onLogout={onLogout} onClose={() => setSidebarOpen(false) } userScore={userScore} /></div>
           <div className="flex-1 bg-black/40" onClick={() => setSidebarOpen(false)} />
         </div>
       )}
@@ -404,11 +730,11 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, onLogout }: {
           <div className="w-8" />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {screen === "dashboard" && <DashboardView go={go} />}
+          {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} userScore={userScore} />}
           {screen === "budget"    && <BudgetView budget={budget} onChange={onBudgetChange} go={go} />}
           {screen === "chat"      && <ChatView username={username} budget={budget} />}
-          {screen === "history"   && <HistoryView />}
-          {screen === "scores"    && <ScoresView budget={budget} />}
+          {screen === "history"   && <HistoryView decisions={decisions} userScore={userScore}/>}
+          {screen === "scores"    && <ScoresView budget={budget} decisions={decisions} onDecisionsChange={onDecisionsChange} username={username} />}
         </div>
       </main>
     </div>
@@ -908,7 +1234,6 @@ function BudgetView({ budget, onChange, go }: { budget: BudgetData; onChange: (b
 // ═════════════════════════════════════════════════════════════════════════════
 // CHAT (Bree AI)
 // ═════════════════════════════════════════════════════════════════════════════
-/*
 const NOW_STR = () => new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
 function ChatView({ username, budget }: { username:string; budget:BudgetData }) {
   const uid = useRef(1);
@@ -1035,179 +1360,88 @@ function ChatView({ username, budget }: { username:string; budget:BudgetData }) 
     </div>
   );
 }
-*/
 // ═════════════════════════════════════════════════════════════════════════════
-// HISTORY (Connected to Spring Boot Backend Pipeline)
+// HISTORY (original monthly spending view)
 // ═════════════════════════════════════════════════════════════════════════════
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
-// TypeScript interface matching the static inner DTO class in Score.java
-interface EzBrezScoreHistory {
-  id: number;
-  score: number;
-  amountSpent: number;
-  mlDecision: string;
-  createdAt: string; // ISO string from backend LocalDateTime
-}
+function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], userScore: number }) {
+  const months = getMonths(decisions);
+  const [activeMonth, setActiveMonth] = useState(months[months.length - 1]);
 
-// calculate ezbreez score + add , decisions: Date
-function ezbrezScore(decisions: DecisionResult[], month: Date) {
-  const targetYear = month.getFullYear();
-  const targetMonth = month.getMonth();
-
-  return decisions
-    .filter(
-      (entry) =>
-        entry.date.getFullYear() === targetYear &&
-        entry.date.getMonth() === targetMonth
-    )
-    .reduce((total, entry) => total + entry.score, 0);
-}
-
-function getMonths(entries: EzBrezScoreHistory[]): Date[] {
-  const months: Date[] = [];
-  let currentYear: number | null = null;
-  let currentMonth: number | null = null;
-
-  for (const entry of entries) {
-    const curDate = new Date(entry.createdAt);
-    const year = curDate.getFullYear();
-    const month = curDate.getMonth();
-
-    if (year !== currentYear || month !== currentMonth) {
-      months.push(new Date(year, month, 1));
-      currentYear = year;
-      currentMonth = month;
-    }
+  const prevMonthDiff = 0;
+  if (months.length >= 2) {
+    prevMonthDiff = userScore - ezbreezScore(decisions, months[months.length - 2]);
 
   }
-
-  const now = new Date();
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const last = months[months.length - 1];
-  const alreadyIncluded =
-    last &&
-    last.getFullYear() === currentMonthStart.getFullYear() &&
-    last.getMonth() === currentMonthStart.getMonth();
-
-  return alreadyIncluded ? months : [...months, currentMonthStart];
-}
-
-
-
-
-
-function HistoryView() {
-  const [history, setHistory] = useState<EzBrezScoreHistory[]>([]);
-  const [loading, setLoading] = useState(true);
-  //const months = getMonths(decisions);
-  //const [activeMonth, setActiveMonth] = useState(months[months.length - 1]);
-
-  //var prevMonthDiff = 0;
-  //if (months.length >= 2) {
-   // prevMonthDiff = userScore - ezbreezScore(decisions, months[months.length - 2]);
-
-
-  useEffect(() => {
-    // Get the logged-in user's ID stored during authentication
-    const userId = localStorage.getItem("userId") || "1";
-
-    // Hits your Spring Boot pipeline: Controller -> Service -> Repository
-    fetch(`http://localhost:8081/api/scores/history/${userId}`)
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to fetch history data");
-          return res.json();
-        })
-        .then((data: EzBrezScoreHistory[]) => {
-          setHistory(data);
-          setLoading(false);
-        })
-        .catch((err) => {
-          console.error("Error loading score history from backend:", err);
-          setLoading(false);
-        });
-  }, []);
-
-  if (loading) {
-    return (
-        <div className="px-6 py-12 text-center text-sm font-semibold" style={{ fontFamily: "'DM Sans',sans-serif", color: P.navy }}>
-          Loading your score history pipeline...
-        </div>
-    );
-  }
-
-  if (history.length === 0) {
-    return (
-        <div className="px-6 py-12 text-center text-sm font-medium" style={{ fontFamily: "'DM Sans',sans-serif", color: "#6B9AA8" }}>
-          No historical eZBrez analyses found for this account.
-        </div>
-    );
-  }
-
-  // Grab values from the latest record (first item in the list due to OrderByCreatedAtDesc)
-  const latestRecord = history[0];
-  const userScore = latestRecord.score;
-  const latestDate = new Date(latestRecord.createdAt);
 
   return (
-      <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", color: P.navy }}>Budget History</h1>
-          <p className="text-sm mt-1" style={{ fontFamily: "'DM Sans',sans-serif", color: "#6B9AA8" }}>Monthly spending breakdown by category</p>
-        </div>
+    <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
+      <div>
+        <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>Budget History</h1>
+        <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>Monthly spending breakdown by category</p>
+      </div>
 
-        {/* Active Selection Block displaying the most recent updated month */}
-        <div className="flex gap-2 flex-wrap">
-          <Btn sound="click" onClick={() => {}}
-               className="rounded-xl px-4 py-2 text-sm font-semibold transition-all"
-               style={{
-                 fontFamily: "'Plus Jakarta Sans',sans-serif",
-                 background: `linear-gradient(135deg,${P.navy},${P.teal})`,
-                 color: "#fff",
-                 border: "none"
-               }}>
-            {`${MONTH_NAMES[latestDate.getMonth()]} ${latestDate.getFullYear()}`}
-          </Btn>
-        </div>
+      {/* set active month */}
 
-        {/* Score Tracker Display Header Card */}
-        <div className="rounded-2xl p-6" style={{ background: `linear-gradient(135deg,${P.navy} 0%,${P.teal} 100%)` }}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-white/60 text-xs font-semibold uppercase tracking-wider" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                eZBrez Score — {MONTH_NAMES[latestDate.getMonth()]}
-              </p>
-              <p className="text-white text-3xl font-bold mt-1" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{userScore} / 100</p>
-            </div>
-            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.12)" }}>
-              <Star size={24} style={{ color: P.mint }} />
-            </div>
+      {/*  */}
+      <div className="flex gap-2 flex-wrap">
+        {months.map(m=>(
+          <Btn key={m.getUTCDate()} sound="click" onClick={()=>setActiveMonth(m)}
+            className="rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:brightness-105"
+            style={{
+              fontFamily:"'Plus Jakarta Sans',sans-serif",
+              background: activeMonth===m ? `linear-gradient(135deg,${P.navy},${P.teal})` : "#fff",
+              color: activeMonth===m ? "#fff" : P.navy,
+              border: activeMonth===m ? "none" : "1px solid rgba(34,87,122,0.15)",
+            }}>{`${MONTH_NAMES[m.getMonth()]} ${m.getFullYear()}`}</Btn>
+        ))}
+      </div>
+
+      <div className="rounded-2xl p-6" style={{ background:`linear-gradient(135deg,${P.navy} 0%,${P.teal} 100%)` }}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-white/60 text-xs font-semibold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+              eZBrez Score — {MONTH_NAMES[activeMonth.getMonth()]}
+            </p>
+            <p className="text-white text-3xl font-bold mt-1" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{userScore} / 100</p>
           </div>
-          <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.15)" }}>
-            <div className="h-full rounded-full" style={{ width: `${userScore}%`, background: P.mint }} />
+          <div className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{ background:"rgba(255,255,255,0.12)" }}>
+            <Star size={24} style={{ color:P.mint }}/>
           </div>
-          <p className="text-white/60 text-xs mt-2" style={{ fontFamily: "'DM Sans',sans-serif" }}>
-            Current real-time status parsed directly from machine learning output history.
-          </p>
         </div>
+        <div className="h-2.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.15)" }}>
+          <div className="h-full rounded-full" style={{ width:`${userScore}%`, background:P.mint }}/> {/* TODO: change color*/}
+        </div>
+        {activeMonth == months[months.length - 1] &&
+            <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>{
+            prevMonthDiff > 0 ? `Good standing — +${prevMonthDiff} pts from last month` : prevMonthDiff == 0 ? 
+                `0 change in points since last month` : `${prevMonthDiff} pts difference from last month`}
+        </p>}
+      </div>
 
-        {/* Live Pipeline Analysis Iteration Loop */}
+      {/* Past decisions */}
+      {decisions.length > 0 && (
         <div className="flex flex-col gap-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", color: "#9CB8C8" }}>
+          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
             Past Analyses
           </h2>
-          {history.map((d) => {
-            const itemDate = new Date(d.createdAt);
-            {/*
+          {decisions.map(d=>{
+            const color =
+              d.result.score >= 82 ? P.emerald :
+              d.result.score >= 67 ? P.teal :
+              d.result.score >= 50 ? "#D4A21A" :
+              d.result.score >= 33 ? "#E07B30" : "#C0574A";
+            return (
               <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
                 style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
                 <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
                   style={{ background:`${color}15` }}>
-                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.score}</span>
+                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
@@ -1216,48 +1450,19 @@ function HistoryView() {
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
                     <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{`${d.date.getDate()} ${MONTH_NAMES[d.date.getMonth()]} ${d.date.getFullYear()}`}</span>
-                    */}
-            const color =
-                d.score >= 82 ? P.emerald :
-                    d.score >= 67 ? P.teal :
-                        d.score >= 50 ? "#D4A21A" :
-                            d.score >= 33 ? "#E07B30" : "#C0574A";
-
-            return (
-                <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4" style={{ border: "1px solid rgba(34,87,122,0.07)" }}>
-                  <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0" style={{ background: `${color}15` }}>
-                    <span className="text-xl font-black" style={{ color, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{d.score}</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", color: P.navy }}>
-                      {d.mlDecision || "No structured evaluation details provided"}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      {d.amountSpent > 0 && (
-                          <span className="text-xs font-medium" style={{ color: P.teal, fontFamily: "'DM Sans',sans-serif" }}>
-                      ${d.amountSpent.toLocaleString()}
-                    </span>
-                      )}
-                      <span className="text-xs" style={{ color: "#9CB8C8", fontFamily: "'DM Sans',sans-serif" }}>
-                    {`${itemDate.getDate()} ${MONTH_NAMES[itemDate.getMonth()]} ${itemDate.getFullYear()}`}
-                  </span>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: `${color}15`, color, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                {d.score >= 82 ? "Excellent" : d.score >= 67 ? "Good" : d.score >= 50 ? "Moderate" : d.score >= 33 ? "Risky" : "Avoid"}
-              </span>
                 </div>
-            );
-                {/*
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
                   style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                  {d.score >= 82 ? "Excellent" : d.score >= 67 ? "Good" : d.score >= 50 ? "Moderate" : d.score >= 33 ? "Risky" : "Avoid"}
+                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
                 </span>
-               */}
-
+              </div>
+            );
           })}
         </div>
-      </div>
+      )}
+
+    </div>
   );
 }
 
@@ -1290,146 +1495,216 @@ function ScoreGauge({ score }: { score: number }) {
   );
 }
 
-function ScoresView({ budget }: {budget: BudgetData}) {
+function ScoresView({ budget, decisions, onDecisionsChange, username }: {
+  budget: BudgetData; decisions: AnalyzedDecision[];
+  onDecisionsChange: (d: AnalyzedDecision[]) => void; username: string;
+}) {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
-  const [latest, setLatest] = useState<EzBrezScoreHistory|null>(null);
-  const [error, setError] = useState("");
+  const [latest, setLatest] = useState<AnalyzedDecision|null>(null);
+  const uid = useRef(decisions.length + 1);
 
-  const analyze = async () => {
+  const analyze = () => {
     if (!description.trim()) return;
-
-    setError("");
     playSound("confirm");
     setAnalyzing(true);
+    setTimeout(() => {
+      const result = scoreDecision(description, parseFloat(amount)||0, budget);
+      const decision: AnalyzedDecision = {
+        id: uid.current++,
+        description: description.trim(),
+        amount: parseFloat(amount)||0,
+        result,
+        date: new Date(),
+      };
+      const updated = [decision, ...decisions].slice(0, 20);
+      onDecisionsChange(updated);
+      setLatest(decision);
+      setDescription("");
+      setAmount("");
+      setAnalyzing(false);
+    }, 1000 + Math.random() * 800);
+  };
 
-    // Build payload matching your MlRequest.java backend DTO
+  const  [error, setError] = useState("");
+
+{/*
+  const handleInput = async () => {
+    setError("");
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      setError("Not logged in");
+      return;
+    }
+
     const payload = {
-      description: description.trim(),
-      amount: parseFloat(amount) || 0.0
-    };
+      userId: parseInt(userId),
+      description: description || "",
+      amount: parseFloat(budget.income) || 0,
+      },
+
+    setAnalyzing(true);
 
     try {
-      // Connects directly to your spring boot endpoint
-      const res = await fetch("http://localhost:8080/api/ml/analyze", {
+      const res = await fetch("http://localhost:8081/api/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) throw new Error("ML analysis service pipeline returned an error.");
-
-      // result matches your Score.HistoryResponse object structure
+      if (!res.ok) throw new Error("Failed to save ");
       const result = await res.json();
-      setLatest(result);
 
-      // Clear input fields on successful response completion
-      setDescription("");
+      const decision: AnalyzedDecision = {
+        id: uid.current++,
+        description: description.trim(),
+        amount: parseFloat(amount)||0,
+        result,
+        date: new Date(),
+      };
+*/}
+
+      {/* there will be at most 20 decisions in display/kept in local storage at once */}
+{/*
+      const updated = [decision, ...decisions].slice(0, 20);
+      onDecisionsChange(updated);
+      setLatest(decision);
+
       setAmount("");
+      setAnalyzing(false);
+
+
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Failed to process decision metrics.");
+      setError(err.message || "Something went wrong getting a response.");
     } finally {
       setAnalyzing(false);
     }
   };
 
+*/}
+
+
   return (
-      <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>EZBREZ Scores</h1>
-          <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>
-            Describe any financial decision and receive an AI-generated pros, cons, and a 1-100 score.
-          </p>
+    <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
+      <div>
+        <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>EZBREZ Scores</h1>
+        <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>
+          Describe any financial decision and receive an AI-generated pros, cons, and a 1-100 score.
+        </p>
+      </div>
+
+      {/* Input card */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-5" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
+        <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
+          Analyze a Decision
+        </h2>
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
+            Describe the financial decision
+          </label>
+          <textarea
+            value={description}
+            onChange={e=>setDescription(e.target.value)}
+            placeholder="e.g. I am considering buying a new car for $28,000. I currently drive an older vehicle with high maintenance costs..."
+            rows={4}
+            className="w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none"
+            style={{
+              fontFamily:"'DM Sans',sans-serif", color:P.dark,
+              borderColor:"rgba(34,87,122,0.18)", lineHeight:1.6,
+            }}
+            onFocus={e=>{e.target.style.borderColor=P.teal; e.target.style.boxShadow=`0 0 0 3px ${P.foam}`;}}
+            onBlur={e=>{e.target.style.borderColor="rgba(34,87,122,0.18)"; e.target.style.boxShadow="none";}}
+          />
         </div>
-
-        {/* Input card */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-5" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-          <h2 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
-            Analyze a Decision
-          </h2>
-
-          {error && (
-              <p className="text-xs font-semibold text-red-500 bg-red-50 p-3 rounded-xl border border-red-100">
-                {error}
-              </p>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
-              Describe the financial decision
-            </label>
-            <textarea
-                value={description}
-                onChange={e=>setDescription(e.target.value)}
-                placeholder="e.g. I am considering buying a new car for $28,000. I currently drive an older vehicle with high maintenance costs..."
-                rows={4}
-                className="w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none"
-                style={{
-                  fontFamily:"'DM Sans',sans-serif", color:P.dark,
-                  borderColor:"rgba(34,87,122,0.18)", lineHeight:1.6,
-                }}
-                onFocus={e=>{e.target.style.borderColor=P.teal; e.target.style.boxShadow=`0 0 0 3px ${P.foam}`;}}
-                onBlur={e=>{e.target.style.borderColor="rgba(34,87,122,0.18)"; e.target.style.boxShadow="none";}}
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
+            Amount involved
+          </label>
+          <div className="flex items-center gap-2 rounded-xl border px-4 py-2.5 w-48"
+            style={{ borderColor:"rgba(34,87,122,0.18)" }}>
+            <span className="font-bold text-sm" style={{ color:P.teal }}>$</span>
+            <input
+              type="number" value={amount} onChange={e=>setAmount(e.target.value)}
+              placeholder="0"
+              className="flex-1 outline-none text-sm font-semibold bg-transparent"
+              style={{ color:P.dark, fontFamily:"'DM Sans',sans-serif" }}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.dark }}>
-              Amount involved
-            </label>
-            <div className="flex items-center gap-2 rounded-xl border px-4 py-2.5 w-48"
-                 style={{ borderColor:"rgba(34,87,122,0.18)" }}>
-              <span className="font-bold text-sm" style={{ color:P.teal }}>$</span>
-              <input
-                  type="number" value={amount} onChange={e=>setAmount(e.target.value)}
-                  placeholder="0"
-                  className="flex-1 outline-none text-sm font-semibold bg-transparent"
-                  style={{ color:P.dark, fontFamily:"'DM Sans',sans-serif" }}
-              />
+        </div>
+        <PrimaryBtn onClick={analyze} disabled={analyzing||!description.trim()}>
+          {analyzing ? (
+            <span className="flex items-center gap-2">
+              {[0,1,2].map(i=>(
+                <span key={i} className="w-1.5 h-1.5 rounded-full bg-white animate-bounce" style={{ animationDelay:`${i*0.15}s` }}/>
+              ))}
+              Analyzing...
+            </span>
+          ) : (
+            <span className="flex items-center gap-2"><Award size={15}/> Analyze Decision</span>
+          )}
+        </PrimaryBtn>
+      </div>
+
+      {/* Latest result */}
+      {latest && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-6" style={{ border:`2px solid ${P.emerald}40` }}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color:"#9CB8C8", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                Latest Analysis — {`${latest.date.getDate()} ${MONTH_NAMES[latest.date.getMonth()]} ${latest.date.getFullYear()}`}
+              </p>
+              <p className="text-base font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
+                {latest.description.length > 80 ? latest.description.slice(0,80)+"..." : latest.description}
+              </p>
+              {latest.amount > 0 && (
+                <p className="text-sm font-semibold mt-1" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>
+                  Amount: ${latest.amount.toLocaleString()}
+                </p>
+              )}
+            </div>
+            <ScoreGauge score={latest.result.score} />
+          </div>
+
+          <p className="text-sm leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#4A7080" }}>
+            {latest.result.summary}
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(87,204,153,0.06)", border:"1px solid rgba(87,204,153,0.2)" }}>
+              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                style={{ color:P.emerald, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                <CheckCircle size={13}/> Pros
+              </p>
+              <ul className="flex flex-col gap-2">
+                {latest.result.pros.map((pro,i)=>(
+                  <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
+                    style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
+                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:P.emerald }}/>
+                    {pro}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background:"rgba(192,87,74,0.06)", border:"1px solid rgba(192,87,74,0.2)" }}>
+              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                style={{ color:"#C0574A", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                <XCircle size={13}/> Cons
+              </p>
+              <ul className="flex flex-col gap-2">
+                {latest.result.cons.map((con,i)=>(
+                  <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
+                    style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
+                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:"#C0574A" }}/>
+                    {con}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
-          <PrimaryBtn onClick={analyze} disabled={analyzing||!description.trim()}>
-            {analyzing ? (
-                <span className="flex items-center gap-2">
-              {[0,1,2].map(i=>(
-                  <span key={i} className="w-1.5 h-1.5 rounded-full bg-white animate-bounce" style={{ animationDelay:`${i*0.15}s` }}/>
-              ))}
-                  Analyzing...
-            </span>
-            ) : (
-                <span className="flex items-center gap-2"><Award size={15}/> Analyze Decision</span>
-            )}
-          </PrimaryBtn>
         </div>
+      )}
 
-        {/* Latest result */}
-        {latest && (
-            <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-6" style={{ border:`2px solid ${P.emerald}40` }}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color:"#9CB8C8", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                    Latest Analysis — {`${(new Date(latest.createdAt)).getDate()} ${MONTH_NAMES[(new Date(latest.createdAt)).getMonth()]} ${(new Date(latest.createdAt)).getFullYear()}`}
-                  </p>
-                  <p className="text-base font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-                    {latest.mlDecision.length > 80 ? latest.mlDecision.slice(0,80)+"..." : latest.mlDecision}
-                  </p>
-                  {latest.amountSpent > 0 && (
-                      <p className="text-sm font-semibold mt-1" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>
-                        Amount: ${latest.amountSpent.toLocaleString()}
-                      </p>
-                  )}
-                </div>
-                <ScoreGauge score={latest.score} />
-              </div>
-
-              <p className="text-sm leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#4A7080" }}>
-                {latest.mlDecision}
-              </p>
-
-            </div>
-        )}
-      </div>
+    </div>
   );
 }
 
@@ -1440,14 +1715,16 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [username, setUsername] = useState("");
   const [budget, setBudget] = useState<BudgetData>(DEFAULT_BUDGET);
+  const [decisions, setDecisions] = useState<AnalyzedDecision[]>([]);
 
   const go = (s: Screen) => { playSound("click"); setScreen(s); };
 
-  const handleLogin = (uname: string, b: BudgetData) => {
-    setUsername(uname); setBudget(b); go("dashboard");
+  const handleLogin = (uname: string, b: BudgetData, d: AnalyzedDecision[]) => {
+    setUsername(uname); setBudget(b); setDecisions(d); go("dashboard");
   };
-  const handleLogout = () => { setUsername(""); setBudget(DEFAULT_BUDGET); go("login"); };
+  const handleLogout = () => { setUsername(""); setBudget(DEFAULT_BUDGET); setDecisions([]); go("login"); };
   const handleBudgetChange = (b: BudgetData) => { setBudget(b); if (username) LS.saveBudget(username, b); };
+  const handleDecisionsChange = (d: AnalyzedDecision[]) => { setDecisions(d); if (username) LS.saveDecisions(username, d); };
 
   return (
     <div className="size-full" style={{ fontFamily:"'DM Sans',sans-serif" }}>
@@ -1456,6 +1733,7 @@ export default function App() {
         : <AppLayout
             screen={screen} go={go} username={username}
             budget={budget} onBudgetChange={handleBudgetChange}
+            decisions={decisions} onDecisionsChange={handleDecisionsChange}
             onLogout={handleLogout}
           />}
     </div>
