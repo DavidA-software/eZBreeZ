@@ -125,6 +125,25 @@ function ezbreezScore(decisions: AnalyzedDecision[]) {
 
 }
 
+function getMonths(entries: AnalyzedDecision[]): Date[] {
+  const months: Date[] = [];
+  let currentYear: number | null = null;
+  let currentMonth: number | null = null;
+
+  for (const entry of entries) {
+    const year = entry.date.getFullYear();
+    const month = entry.date.getMonth();
+
+    if (year !== currentYear || month !== currentMonth) {
+      months.push(new Date(year, month, 1));
+      currentYear = year;
+      currentMonth = month;
+    }
+
+  }
+
+  return months;
+}
 
 // ─── Financial Decision Scorer AI ─────────────────────────────────────────────
 function scoreDecision(description: string, amount: number, budget: BudgetData): DecisionResult {
@@ -726,7 +745,7 @@ function DashboardView({ go, budget, username, userScore }: { go:(s:Screen)=>voi
             Good morning, {username}
           </h1>
           <p className="text-sm mt-0.5" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>
-            {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} — Budget snapshot
+            {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
           </p>
         </div>
         <Btn sound="confirm" onClick={()=>go("budget")}
@@ -1050,8 +1069,13 @@ function ChatView({ username, budget }: { username:string; budget:BudgetData }) 
 // ═════════════════════════════════════════════════════════════════════════════
 // HISTORY (original monthly spending view)
 // ═════════════════════════════════════════════════════════════════════════════
-const MONTHS = ["July 2026","June 2026","May 2026"];
-const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string;color:string}[]> = {
+const MONTHS = ["July 2026","June 2026","May 2026"]; // to delete
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string;color:string}[]> = { // to delete
   "July 2026": [
     { id:1, label:"Unspent",     pct:70, amount:"$3,640", color:P.emerald },
     { id:2, label:"Food",        pct:22, amount:"$1,144", color:"#C0574A" },
@@ -1075,6 +1099,8 @@ const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string
 function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], userScore: number }) {
   const [activeMonth, setActiveMonth] = useState("July 2026");
   const data = MONTH_DATA[activeMonth];
+  //const months = getMonths(decisions);
+
   return (
     <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
       <div>
@@ -1087,6 +1113,7 @@ function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], 
 
       {/* set active month */}
 
+      {/* `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}` */}
       <div className="flex gap-2 flex-wrap">
         {MONTHS.map(m=>(
           <Btn key={m} sound="click" onClick={()=>setActiveMonth(m)}
