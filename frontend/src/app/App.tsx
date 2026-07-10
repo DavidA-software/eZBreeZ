@@ -1067,6 +1067,10 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
             }}>{m}</Btn>
         ))}
       </div>
+
+      {/* show %s spent on different sectors of budget */}
+
+      {/*
       <div className="flex flex-col gap-4">
         {data.map(item=>(
           <div key={item.id} className="bg-white rounded-2xl p-5 shadow-sm" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
@@ -1087,6 +1091,10 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
           </div>
         ))}
       </div>
+      */}
+
+      {/* ezbreez score */}
+
       <div className="rounded-2xl p-6" style={{ background:`linear-gradient(135deg,${P.navy} 0%,${P.teal} 100%)` }}>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -1103,10 +1111,13 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
         <div className="h-2.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.15)" }}>
           <div className="h-full rounded-full" style={{ width:"67%", background:P.mint }}/>
         </div>
-        <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>Good standing — +3 pts from last month</p>
+
+        {/* TODO */}
+        <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>+3 pts from last month</p>
       </div>
 
-{/* Past decisions */}
+      {/* Past decisions */}
+
       {decisions.length > 0 && (
         <div className="flex flex-col gap-4">
           <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
