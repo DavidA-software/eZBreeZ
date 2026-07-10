@@ -639,7 +639,7 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
           {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} />}
           {screen === "budget"    && <BudgetView budget={budget} onChange={onBudgetChange} go={go} />}
           {screen === "chat"      && <ChatView username={username} budget={budget} />}
-          {screen === "history"   && <HistoryView />}
+          {screen === "history"   && <HistoryView decisions={decisions}/>}
           {screen === "scores"    && <ScoresView budget={budget} decisions={decisions} onDecisionsChange={onDecisionsChange} username={username} />}
         </div>
       </main>
@@ -1040,15 +1040,21 @@ const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string
   ],
 };
 
-function HistoryView() {
+function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
   const [activeMonth, setActiveMonth] = useState("July 2026");
   const data = MONTH_DATA[activeMonth];
   return (
     <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
       <div>
+
+      {/* start of BUDGET HISTORY */}
+
         <h1 className="text-2xl font-bold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>Budget History</h1>
         <p className="text-sm mt-1" style={{ fontFamily:"'DM Sans',sans-serif", color:"#6B9AA8" }}>Monthly spending breakdown by category</p>
       </div>
+
+      {/* set active month */}
+
       <div className="flex gap-2 flex-wrap">
         {MONTHS.map(m=>(
           <Btn key={m} sound="click" onClick={()=>setActiveMonth(m)}
@@ -1099,7 +1105,46 @@ function HistoryView() {
         </div>
         <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>Good standing — +3 pts from last month</p>
       </div>
+
+{/* Past decisions */}
+      {decisions.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
+            Past Analyses
+          </h2>
+          {decisions.map(d=>{
+            const color =
+              d.result.score >= 82 ? P.emerald :
+              d.result.score >= 67 ? P.teal :
+              d.result.score >= 50 ? "#D4A21A" :
+              d.result.score >= 33 ? "#E07B30" : "#C0574A";
+            return (
+              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
+                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
+                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
+                  style={{ background:`${color}15` }}>
+                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
+                    {d.description}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
+                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
+                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
+
   );
 }
 
@@ -1119,7 +1164,11 @@ function ScoreGauge({ score }: { score: number }) {
     score >= 33 ? "Risky" : "Avoid";
 
   return (
+
+      // GRAPH: SCORE GAUGE
+
     <div className="flex flex-col items-center gap-2">
+      {/**/}
       <div className="relative w-32 h-32 flex items-center justify-center rounded-full"
         style={{ background:`conic-gradient(${color} ${score}%, #EEF9F4 0%)` }}>
         <div className="w-24 h-24 rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
@@ -1281,44 +1330,6 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
               </ul>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Past decisions */}
-      {decisions.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
-            Past Analyses
-          </h2>
-          {decisions.map(d=>{
-            const color =
-              d.result.score >= 82 ? P.emerald :
-              d.result.score >= 67 ? P.teal :
-              d.result.score >= 50 ? "#D4A21A" :
-              d.result.score >= 33 ? "#E07B30" : "#C0574A";
-            return (
-              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
-                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
-                  style={{ background:`${color}15` }}>
-                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-                    {d.description}
-                  </p>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
-                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
-                  </div>
-                </div>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
-                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
-                </span>
-              </div>
-            );
-          })}
         </div>
       )}
     </div>
