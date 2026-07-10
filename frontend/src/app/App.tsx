@@ -61,8 +61,6 @@ const LS = {
   userExists:   (username: string) => LS.users().some(u => u.username.toLowerCase() === username.toLowerCase()),
   saveBudget:   (u: string, d: BudgetData)          => localStorage.setItem(`ez_budget_${u}`, JSON.stringify(d)),
   loadBudget:   (u: string): BudgetData | null       => JSON.parse(localStorage.getItem(`ez_budget_${u}`) || "null"),
-  saveDecisions:(u: string, d: AnalyzedDecision[])   => localStorage.setItem(`ez_decisions_${u}`, JSON.stringify(d)),
-  loadDecisions:(u: string): AnalyzedDecision[]      => JSON.parse(localStorage.getItem(`ez_decisions_${u}`) || "[]"),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,20 +71,6 @@ interface Expense  { id: number; label: string; amount: string; period: "Month"|
 interface BudgetData { income: string; period: "Month"|"Year"; expenses: Expense[] }
 interface Msg { id: number; text: string; from: "ai"|"user"; time: string }
 
-interface DecisionResult {
-  score: number;
-  summary: string;
-  pros: string[];
-  cons: string[];
-}
-interface AnalyzedDecision {
-  id: number;
-  description: string;
-  amount: number;
-  result: DecisionResult;
-  date: Date;
-}
-
 const DEFAULT_BUDGET: BudgetData = {
   income: "5200", period: "Month",
   expenses: [
@@ -95,267 +79,6 @@ const DEFAULT_BUDGET: BudgetData = {
     { id: 3, label: "Groceries", amount: "350",  period: "Month" },
   ],
 };
-
-
-// calculate ezbreez score + add , decisions: Date 
-function ezbreezScore(decisions: AnalyzedDecision[], month: Date) {
-  const targetYear = month.getFullYear();
-  const targetMonth = month.getMonth();
-
-  return decisions
-    .filter(
-      (entry) =>
-        entry.date.getFullYear() === targetYear &&
-        entry.date.getMonth() === targetMonth
-    )
-    .reduce((total, entry) => total + entry.amount, 0);
-}
-
-function getMonths(entries: AnalyzedDecision[]): Date[] {
-  const months: Date[] = [];
-  let currentYear: number | null = null;
-  let currentMonth: number | null = null;
-
-  for (const entry of entries) {
-    const year = entry.date.getFullYear();
-    const month = entry.date.getMonth();
-
-    if (year !== currentYear || month !== currentMonth) {
-      months.push(new Date(year, month, 1));
-      currentYear = year;
-      currentMonth = month;
-    }
-
-  }
-
-  const now = new Date();
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const last = months[months.length - 1];
-  const alreadyIncluded =
-    last &&
-    last.getFullYear() === currentMonthStart.getFullYear() &&
-    last.getMonth() === currentMonthStart.getMonth();
-
-  return alreadyIncluded ? months : [...months, currentMonthStart];
-}
-
-// ─── Financial Decision Scorer AI ─────────────────────────────────────────────
-function scoreDecision(description: string, amount: number, budget: BudgetData): DecisionResult {
-  const desc = description.toLowerCase();
-  const income = parseFloat(budget.income) || 5200;
-  const totalExp = budget.expenses.reduce((s, e) => s + (parseFloat(e.amount)||0), 0);
-  const saved = income - totalExp;
-  const amtRatio = amount / income; // relative to monthly income
-
-  const is = (pattern: RegExp) => pattern.test(desc);
-
-  const isDebtPayoff    = is(/pay(ing)?\s*(off|down)|debt\s*free|payoff|pay off/);
-  const isInvesting     = is(/invest|stock|fund|index|401k|ira|roth|etf|bond|dividend/);
-  const isCrypto        = is(/crypto|bitcoin|ethereum|nft|altcoin|token|coin|defi/);
-  const isEmergency     = is(/emergency|buffer|safety net/);
-  const isSavings       = is(/sav(e|ing)|high.yield|savings account|cd |certificate/);
-  const isHome          = is(/home|house|property|mortgage|real estate|condo/);
-  const isEducation     = is(/school|college|education|degree|course|training|certif|bootcamp/);
-  const isCarNew        = is(/new car|new vehicle|new truck/);
-  const isCar           = is(/car|vehicle|auto|truck/) && !isCarNew;
-  const isVacation      = is(/vacation|holiday|trip|travel|cruise|resort/);
-  const isLuxury        = is(/luxury|jewel|designer|watch|yacht|boat|jewelry/);
-  const isBusiness      = is(/business|startup|entrepreneur|franchise|side hustle/);
-  const isInsurance     = is(/insurance|life insurance|protect|coverage/);
-  const isRenovation    = is(/renovate|renovation|home improvement|kitchen|bathroom|remodel/);
-  const isGambling      = is(/gambl|casino|bet|lottery|poker/);
-  const isRetirement    = is(/retire|pension|annuity/);
-
-  let baseScore = 55;
-  const pros: string[] = [];
-  const cons: string[] = [];
-
-  if (isGambling) {
-    baseScore = 8;
-    pros.push("Entertainment value in controlled, budgeted amounts");
-    cons.push("Expected return is mathematically negative");
-    cons.push("High risk of losing the entire amount");
-    cons.push("Can develop into compulsive behavior");
-    cons.push("No wealth-building potential");
-  } else if (isCrypto) {
-    baseScore = 30;
-    pros.push("High upside potential if market moves favorably");
-    pros.push("Provides portfolio diversification from traditional assets");
-    cons.push("Extreme volatility — drops of 50-80% are common");
-    cons.push("No underlying cash flows or earnings to anchor value");
-    cons.push("Regulatory uncertainty creates additional risk");
-    cons.push("Not a recommended core financial strategy");
-    if (amtRatio > 0.5) cons.push("Amount is large relative to income — limit speculative holdings to under 5% of net worth");
-  } else if (isEmergency) {
-    baseScore = 93;
-    pros.push("Foundational financial safety net against unexpected events");
-    pros.push("Prevents going into high-interest debt during emergencies");
-    pros.push("Fully liquid and FDIC insured");
-    pros.push("Reduces financial stress and improves decision-making");
-    cons.push("Savings account yields less than long-term equity investing");
-    cons.push("Inflation gradually erodes purchasing power of idle cash");
-  } else if (isRetirement) {
-    baseScore = 92;
-    pros.push("Tax-advantaged growth significantly accelerates wealth accumulation");
-    pros.push("Employer match (if available) is an immediate 50-100% return");
-    pros.push("Compound interest over decades creates substantial wealth");
-    pros.push("Reduces current taxable income");
-    cons.push("Funds are locked until retirement age (59.5) without penalty");
-    cons.push("Annual contribution limits apply");
-  } else if (isDebtPayoff) {
-    baseScore = 90;
-    pros.push("Guaranteed return equal to the interest rate on the debt");
-    pros.push("Improves credit utilization ratio and credit score");
-    pros.push("Reduces monthly obligations and increases cash flow");
-    pros.push("Eliminates financial stress associated with carrying debt");
-    cons.push("Reduces liquid cash reserves in the short term");
-    if (amtRatio > 3) cons.push("Large payment — ensure you maintain a 3-month emergency fund before fully paying off");
-  } else if (isInvesting) {
-    baseScore = 83;
-    pros.push("Compound growth builds wealth substantially over time");
-    pros.push("Historically equities return 7-10% annually over the long run");
-    pros.push("Index funds provide diversification at low cost");
-    if (amtRatio <= 1) pros.push("Amount is proportionate and manageable relative to your income");
-    cons.push("Market volatility means short-term value can decrease");
-    cons.push("Capital is less accessible while invested");
-    if (amtRatio > 4) cons.push("Confirm your emergency fund (3-6 months of expenses) is funded before committing large sums");
-  } else if (isSavings) {
-    baseScore = 82;
-    pros.push("High-yield accounts currently earn 4-5% APY");
-    pros.push("Fully liquid — funds accessible at any time");
-    pros.push("FDIC insured up to $250,000");
-    pros.push("No market risk");
-    cons.push("Returns are lower than long-term equity investing");
-    cons.push("Inflation can erode real purchasing power over time");
-  } else if (isHome) {
-    baseScore = amtRatio <= 36 ? 73 : 56;
-    pros.push("Builds equity over time rather than renting");
-    pros.push("Potential for long-term property appreciation");
-    pros.push("Stability and control over your living environment");
-    pros.push("Mortgage interest may be tax-deductible");
-    cons.push("Illiquid asset — difficult to sell quickly");
-    cons.push("Additional costs: property tax, insurance, maintenance (1-3% of value annually)");
-    if (amtRatio > 36) cons.push("Purchase price appears high relative to income — review debt-to-income ratio carefully");
-  } else if (isEducation) {
-    baseScore = 77;
-    pros.push("Increases lifetime earning potential and career opportunities");
-    pros.push("Skills and credentials provide durable long-term value");
-    pros.push("May qualify for education tax credits");
-    cons.push("Financial return varies by field and job market conditions");
-    cons.push("Upfront cost with a delayed financial payoff period");
-    if (amtRatio > 6) cons.push("Consider carefully whether student loans are preferable to depleting savings");
-  } else if (isCarNew) {
-    baseScore = 46;
-    pros.push("Comes with full manufacturer warranty and latest safety features");
-    pros.push("Lower initial maintenance costs and higher reliability");
-    pros.push("Better financing rates typically available on new vehicles");
-    cons.push("Depreciates 15-25% in the first year alone");
-    cons.push("Higher insurance premiums than equivalent used vehicles");
-    cons.push("Total cost of ownership significantly exceeds a comparable used car");
-    if (amount > income * 0.15 * 12) cons.push("Monthly payments may exceed the recommended 15% of monthly income guideline");
-  } else if (isCar) {
-    baseScore = 61;
-    pros.push("Lower purchase price and reduced depreciation impact");
-    pros.push("Lower insurance costs than new vehicles");
-    pros.push("Certified pre-owned options provide warranty coverage");
-    cons.push("Higher potential maintenance and repair costs");
-    cons.push("Less predictable reliability without full vehicle history");
-    if (amount > income * 0.12 * 12) cons.push("Ensure total monthly car costs (payment + insurance + fuel) stay under 15% of income");
-  } else if (isVacation) {
-    baseScore = amtRatio <= 0.5 ? 63 : 47;
-    pros.push("Mental health and well-being benefits are well-documented");
-    pros.push("Experiences and memories provide lasting value");
-    if (amtRatio <= 0.5) pros.push("Amount is reasonable relative to your monthly income");
-    cons.push("No financial return — entirely a consumption expense");
-    cons.push("Same funds invested would compound significantly over time");
-    if (amtRatio > 0.5) cons.push("Amount is significant — consider a more budget-friendly itinerary");
-    if (amtRatio > 1) cons.push("Exceeds one month of income — review whether this fits your savings goals");
-  } else if (isLuxury) {
-    baseScore = 27;
-    pros.push("Personal enjoyment and satisfaction");
-    pros.push("Certain items (art, specific watches) may retain or appreciate in value");
-    cons.push("Depreciates rapidly — resale value is typically a fraction of purchase price");
-    cons.push("High opportunity cost relative to investing or debt repayment");
-    cons.push("Does not improve financial health or future security");
-    if (amtRatio > 1) cons.push("Represents more than one month of income — consider whether this serves your long-term plan");
-  } else if (isBusiness) {
-    baseScore = 64;
-    pros.push("Potential for significant income generation and wealth creation");
-    pros.push("Business ownership provides tax advantages not available to employees");
-    pros.push("Builds an asset that can be sold or generate passive income");
-    cons.push("Approximately 50% of businesses fail within the first five years");
-    cons.push("Capital is at risk with no guaranteed return");
-    cons.push("Requires time investment well beyond the initial financial cost");
-    if (amtRatio > 2) cons.push("Large commitment — ensure personal finances are stable before investing this amount");
-  } else if (isInsurance) {
-    baseScore = 85;
-    pros.push("Protects against catastrophic financial loss");
-    pros.push("Provides financial security for dependents and long-term planning");
-    pros.push("Premiums may be tax-deductible depending on type");
-    cons.push("Ongoing premium expense with no direct financial return if unused");
-    cons.push("Policies vary significantly — review coverage terms carefully");
-  } else if (isRenovation) {
-    baseScore = 67;
-    pros.push("Increases property value and quality of living");
-    pros.push("Kitchen and bathroom renovations typically return 60-80% of cost on resale");
-    pros.push("May improve energy efficiency and reduce ongoing utility costs");
-    cons.push("Renovation costs frequently exceed initial estimates by 10-30%");
-    cons.push("Return on investment depends heavily on local real estate conditions");
-    if (amtRatio > 3) cons.push("Large project — obtain multiple contractor quotes before committing");
-  } else {
-    // Generic fallback
-    baseScore = 55;
-    pros.push("You are evaluating the decision before committing — a strong financial habit");
-    pros.push("If it meets a genuine need, it can be a sound use of funds");
-    cons.push("Opportunity cost — same funds could serve higher-priority financial goals");
-    cons.push("Ensure this decision is consistent with your overall budget and savings targets");
-    if (amtRatio > 2) cons.push("Amount is substantial relative to income — consider phasing or scaling down");
-  }
-
-  // Adjust score for outsized amounts
-  if (amtRatio > 6 && baseScore > 50) baseScore = Math.max(baseScore - 10, 40);
-  if (amtRatio > 12 && baseScore > 50) baseScore = Math.max(baseScore - 5, 35);
-  if (amount <= 0) baseScore = 50;
-  baseScore = Math.min(100, Math.max(1, baseScore));
-
-  const label =
-    baseScore >= 82 ? "Excellent" :
-    baseScore >= 67 ? "Good" :
-    baseScore >= 50 ? "Moderate" :
-    baseScore >= 33 ? "Risky" : "Avoid";
-
-  const summaryTone =
-    baseScore >= 82 ? "This is a financially sound decision that aligns well with wealth-building principles." :
-    baseScore >= 67 ? "This is a reasonable decision with some important considerations to keep in mind." :
-    baseScore >= 50 ? "This decision has merit but carries notable risks worth weighing carefully." :
-    baseScore >= 33 ? "This carries significant financial risk. Carefully review the cons before proceeding." :
-    "This decision poses serious financial risk. Consider alternatives before committing.";
-
-  return { score: baseScore, pros, cons, summary: `${label} — ${summaryTone}` };
-}
-
-// ─── Bree AI "brain" (Piped through Spring Boot to Python ML) ───────────────
-async function getBreeResponse(input: string, budget: BudgetData, username: string): Promise<string> {
-  try {
-    const response = await fetch("http://localhost:8080/api/bree/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: input,
-        username: username || "User",
-        budget: budget // Sends full budget data so Python can parse it
-      }),
-    });
-
-    if (!response.ok) throw new Error();
-
-    const data = await response.json();
-    return data.reply; // Expecting { "reply": "Grok's response text here" } from Python
-  } catch (error) {
-    return "I'm having trouble connecting to my financial brain waves. Is the Spring Boot or Python server down?";
-  }
-}
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 function Logo({ inv = false, size = "text-3xl" }: { inv?: boolean; size?: string }) {
@@ -602,10 +325,9 @@ const NAV_ITEMS: { screen: Screen; label: string; icon: React.ReactNode }[] = [
   { screen: "scores",    label: "EZBREZ Scores", icon: <Award size={18}/> },
 ];
 
-function Sidebar({ active, go, username, onLogout, onClose, userScore }: {
-  userScore: number; active: Screen; go: (s: Screen) => void; username: string; onLogout: ()=>void; onClose?: ()=>void
+function Sidebar({ active, go, username, onLogout, onClose }: {
+  active: Screen; go: (s: Screen) => void; username: string; onLogout: ()=>void; onClose?: ()=>void
 }) {
-    console.log(userScore);
   return (
     <div className="flex flex-col h-full py-6 px-4" style={{ background: P.navy }}>
       <div className="flex items-center justify-between px-2 mb-8">
@@ -620,7 +342,7 @@ function Sidebar({ active, go, username, onLogout, onClose, userScore }: {
           </div>
           <div>
             <p className="text-xs font-bold text-white" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{username}</p>
-            <p className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Score {userScore}/100</p>
+            {/*<p className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Score {userScore}/100</p> */}
           </div>
         </div>
       )}
@@ -657,22 +379,20 @@ function Sidebar({ active, go, username, onLogout, onClose, userScore }: {
   );
 }
 
-function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, onDecisionsChange, onLogout }: {
+function AppLayout({ screen, go, username, budget, onBudgetChange, onLogout }: {
   screen: Screen; go: (s: Screen) => void; username: string;
   budget: BudgetData; onBudgetChange: (b: BudgetData) => void;
-  decisions: AnalyzedDecision[]; onDecisionsChange: (d: AnalyzedDecision[]) => void;
   onLogout: () => void;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const userScore = ezbreezScore(decisions, new Date);
   return (
     <div className="size-full flex overflow-hidden" style={{ background: P.bg }}>
       <aside className="hidden md:flex flex-col w-60 shrink-0 overflow-y-auto">
-        <Sidebar active={screen} go={go} username={username} onLogout={onLogout} userScore={userScore} />
+        <Sidebar active={screen} go={go} username={username} onLogout={onLogout} />
       </aside>
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="w-64 h-full"><Sidebar active={screen} go={go} username={username} onLogout={onLogout} onClose={() => setSidebarOpen(false) } userScore={userScore} /></div>
+          <div className="w-64 h-full"><Sidebar active={screen} go={go} username={username} onLogout={onLogout} onClose={() => setSidebarOpen(false)} /></div>
           <div className="flex-1 bg-black/40" onClick={() => setSidebarOpen(false)} />
         </div>
       )}
@@ -684,11 +404,11 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
           <div className="w-8" />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} userScore={userScore} />}
+          {screen === "dashboard" && <DashboardView go={go} />}
           {screen === "budget"    && <BudgetView budget={budget} onChange={onBudgetChange} go={go} />}
           {screen === "chat"      && <ChatView username={username} budget={budget} />}
-          {screen === "history"   && <HistoryView decisions={decisions} userScore={userScore}/>}
-          {screen === "scores"    && <ScoresView budget={budget} decisions={decisions} onDecisionsChange={onDecisionsChange} username={username} />}
+          {screen === "history"   && <HistoryView />}
+          {screen === "scores"    && <ScoresView budget={budget} />}
         </div>
       </main>
     </div>
@@ -1333,9 +1053,64 @@ interface EzBrezScoreHistory {
   createdAt: string; // ISO string from backend LocalDateTime
 }
 
+// calculate ezbreez score + add , decisions: Date
+function ezbrezScore(decisions: DecisionResult[], month: Date) {
+  const targetYear = month.getFullYear();
+  const targetMonth = month.getMonth();
+
+  return decisions
+    .filter(
+      (entry) =>
+        entry.date.getFullYear() === targetYear &&
+        entry.date.getMonth() === targetMonth
+    )
+    .reduce((total, entry) => total + entry.score, 0);
+}
+
+function getMonths(entries: EzBrezScoreHistory[]): Date[] {
+  const months: Date[] = [];
+  let currentYear: number | null = null;
+  let currentMonth: number | null = null;
+
+  for (const entry of entries) {
+    const curDate = new Date(entry.createdAt);
+    const year = curDate.getFullYear();
+    const month = curDate.getMonth();
+
+    if (year !== currentYear || month !== currentMonth) {
+      months.push(new Date(year, month, 1));
+      currentYear = year;
+      currentMonth = month;
+    }
+
+  }
+
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const last = months[months.length - 1];
+  const alreadyIncluded =
+    last &&
+    last.getFullYear() === currentMonthStart.getFullYear() &&
+    last.getMonth() === currentMonthStart.getMonth();
+
+  return alreadyIncluded ? months : [...months, currentMonthStart];
+}
+
+
+
+
+
 function HistoryView() {
   const [history, setHistory] = useState<EzBrezScoreHistory[]>([]);
   const [loading, setLoading] = useState(true);
+  //const months = getMonths(decisions);
+  //const [activeMonth, setActiveMonth] = useState(months[months.length - 1]);
+
+  //var prevMonthDiff = 0;
+  //if (months.length >= 2) {
+   // prevMonthDiff = userScore - ezbreezScore(decisions, months[months.length - 2]);
+
 
   useEffect(() => {
     // Get the logged-in user's ID stored during authentication
@@ -1427,6 +1202,21 @@ function HistoryView() {
           </h2>
           {history.map((d) => {
             const itemDate = new Date(d.createdAt);
+            {/*
+              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
+                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
+                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
+                  style={{ background:`${color}15` }}>
+                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.score}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
+                    {d.description}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
+                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{`${d.date.getDate()} ${MONTH_NAMES[d.date.getMonth()]} ${d.date.getFullYear()}`}</span>
+                    */}
             const color =
                 d.score >= 82 ? P.emerald :
                     d.score >= 67 ? P.teal :
@@ -1458,6 +1248,13 @@ function HistoryView() {
               </span>
                 </div>
             );
+                {/*
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
+                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                  {d.score >= 82 ? "Excellent" : d.score >= 67 ? "Good" : d.score >= 50 ? "Moderate" : d.score >= 33 ? "Risky" : "Avoid"}
+                </span>
+               */}
+
           })}
         </div>
       </div>
@@ -1493,10 +1290,7 @@ function ScoreGauge({ score }: { score: number }) {
   );
 }
 
-function ScoresView({ budget, decisions, onDecisionsChange, username }: {
-  budget: BudgetData; decisions: AnalyzedDecision[];
-  onDecisionsChange: (d: AnalyzedDecision[]) => void; username: string;
-}) {
+function ScoresView({ budget }: {budget: BudgetData}) {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -1544,7 +1338,11 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
         },
         date: new Date(),
       };
+*/}
 
+      {/* there will be at most 20 decisions in display/kept in local storage at once */}
+
+      const updated = [...decisions, result].slice(0, 20);
       // Keep up to 20 decisions inside active app state memory layout
       const updated = [decision, ...decisions].slice(0, 20);
       onDecisionsChange(updated);
@@ -1699,16 +1497,14 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [username, setUsername] = useState("");
   const [budget, setBudget] = useState<BudgetData>(DEFAULT_BUDGET);
-  const [decisions, setDecisions] = useState<AnalyzedDecision[]>([]);
 
   const go = (s: Screen) => { playSound("click"); setScreen(s); };
 
-  const handleLogin = (uname: string, b: BudgetData, d: AnalyzedDecision[]) => {
-    setUsername(uname); setBudget(b); setDecisions(d); go("dashboard");
+  const handleLogin = (uname: string, b: BudgetData) => {
+    setUsername(uname); setBudget(b); go("dashboard");
   };
-  const handleLogout = () => { setUsername(""); setBudget(DEFAULT_BUDGET); setDecisions([]); go("login"); };
+  const handleLogout = () => { setUsername(""); setBudget(DEFAULT_BUDGET); go("login"); };
   const handleBudgetChange = (b: BudgetData) => { setBudget(b); if (username) LS.saveBudget(username, b); };
-  const handleDecisionsChange = (d: AnalyzedDecision[]) => { setDecisions(d); if (username) LS.saveDecisions(username, d); };
 
   return (
     <div className="size-full" style={{ fontFamily:"'DM Sans',sans-serif" }}>
@@ -1717,7 +1513,6 @@ export default function App() {
         : <AppLayout
             screen={screen} go={go} username={username}
             budget={budget} onBudgetChange={handleBudgetChange}
-            decisions={decisions} onDecisionsChange={handleDecisionsChange}
             onLogout={handleLogout}
           />}
     </div>
