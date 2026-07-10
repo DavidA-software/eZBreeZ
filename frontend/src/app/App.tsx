@@ -84,7 +84,7 @@ interface AnalyzedDecision {
   description: string;
   amount: number;
   result: DecisionResult;
-  date: string;
+  date: Date;
 }
 
 const DEFAULT_BUDGET: BudgetData = {
@@ -95,6 +95,36 @@ const DEFAULT_BUDGET: BudgetData = {
     { id: 3, label: "Groceries", amount: "350",  period: "Month" },
   ],
 };
+
+
+// calculate ezbreez score + add , decisions: Date 
+function ezbreezScore(decisions: AnalyzedDecision[]) {
+    /*
+  const targetYear = monthStart.getFullYear();
+  const targetMonth = monthStart.getMonth();
+
+  return decisions
+    .filter(
+      (entry) =>
+        entry.date.getFullYear() === targetYear &&
+        entry.date.getMonth() === targetMonth
+    )
+    .reduce((total, entry) => total + entry.amount, 0);
+*/
+  if (decisions.length === 0) return 0;
+  // make for past 30 days
+
+  let total = 0;
+  for (let i = 0; i < decisions.length; i++) {
+    if (decisions[i].date)
+    total += decisions[i].amount;
+  }
+
+  const score = Math.floor(total / decisions.length);
+  return score;
+
+}
+
 
 // ─── Financial Decision Scorer AI ─────────────────────────────────────────────
 function scoreDecision(description: string, amount: number, budget: BudgetData): DecisionResult {
@@ -556,9 +586,10 @@ const NAV_ITEMS: { screen: Screen; label: string; icon: React.ReactNode }[] = [
   { screen: "scores",    label: "EZBREZ Scores", icon: <Award size={18}/> },
 ];
 
-function Sidebar({ active, go, username, onLogout, onClose }: {
-  active: Screen; go: (s: Screen) => void; username: string; onLogout: ()=>void; onClose?: ()=>void;
+function Sidebar({ active, go, username, onLogout, onClose, userScore }: {
+  userScore: number; active: Screen; go: (s: Screen) => void; username: string; onLogout: ()=>void; onClose?: ()=>void
 }) {
+    console.log(userScore);
   return (
     <div className="flex flex-col h-full py-6 px-4" style={{ background: P.navy }}>
       <div className="flex items-center justify-between px-2 mb-8">
@@ -573,7 +604,7 @@ function Sidebar({ active, go, username, onLogout, onClose }: {
           </div>
           <div>
             <p className="text-xs font-bold text-white" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{username}</p>
-            <p className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Score 67/100</p>
+            <p className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Score {userScore}/100</p>
           </div>
         </div>
       )}
@@ -617,14 +648,15 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
   onLogout: () => void;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const userScore = ezbreezScore(decisions);
   return (
     <div className="size-full flex overflow-hidden" style={{ background: P.bg }}>
       <aside className="hidden md:flex flex-col w-60 shrink-0 overflow-y-auto">
-        <Sidebar active={screen} go={go} username={username} onLogout={onLogout} />
+        <Sidebar active={screen} go={go} username={username} onLogout={onLogout} userScore={userScore} />
       </aside>
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="w-64 h-full"><Sidebar active={screen} go={go} username={username} onLogout={onLogout} onClose={() => setSidebarOpen(false)} /></div>
+          <div className="w-64 h-full"><Sidebar active={screen} go={go} username={username} onLogout={onLogout} onClose={() => setSidebarOpen(false) } userScore={userScore} /></div>
           <div className="flex-1 bg-black/40" onClick={() => setSidebarOpen(false)} />
         </div>
       )}
@@ -636,10 +668,10 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
           <div className="w-8" />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} />}
+          {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} userScore={userScore} />}
           {screen === "budget"    && <BudgetView budget={budget} onChange={onBudgetChange} go={go} />}
           {screen === "chat"      && <ChatView username={username} budget={budget} />}
-          {screen === "history"   && <HistoryView decisions={decisions}/>}
+          {screen === "history"   && <HistoryView decisions={decisions} userScore={userScore}/>}
           {screen === "scores"    && <ScoresView budget={budget} decisions={decisions} onDecisionsChange={onDecisionsChange} username={username} />}
         </div>
       </main>
@@ -656,7 +688,7 @@ const PIE_DATA = [
   { name:"Unspent", value:70,   color:P.emerald, range:"70-80%" },
 ];
 
-function DashboardView({ go, budget, username }: { go:(s:Screen)=>void; budget:BudgetData; username:string }) {
+function DashboardView({ go, budget, username, userScore }: { go:(s:Screen)=>void; budget:BudgetData; username:string; userScore:number }) {
   const income   = parseFloat(budget.income) || 5200;
   const totalExp = budget.expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
   const saved    = income - totalExp;
@@ -666,7 +698,7 @@ function DashboardView({ go, budget, username }: { go:(s:Screen)=>void; budget:B
     { label:"Monthly Income",   value:`$${income.toLocaleString()}`,   sub:`${budget.period}ly`,         icon:<DollarSign  size={20}/>, up:true  },
     { label:"Total Expenses",   value:`$${totalExp.toLocaleString()}`, sub:`${100-savedPct}% of income`, icon:<TrendingDown size={20}/>, up:false },
     { label:"Saved This Month", value:`$${saved.toLocaleString()}`,    sub:`${savedPct}% savings rate`,  icon:<TrendingUp size={20}/>,  up:true  },
-    { label:"eZBrez Score",     value:"67/100",                        sub:"Good standing",              icon:<Sparkles size={20}/>,    up:true  },
+    { label:"eZBrez Score",     value: `${userScore}/100`, sub:"Good standing", icon:<Sparkles size={20}/>, up:true  },
   ];
 
   const categories = [
@@ -1040,7 +1072,7 @@ const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string
   ],
 };
 
-function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
+function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], userScore: number }) {
   const [activeMonth, setActiveMonth] = useState("July 2026");
   const data = MONTH_DATA[activeMonth];
   return (
@@ -1101,7 +1133,7 @@ function HistoryView({ decisions }: { decisions: AnalyzedDecision[] }) {
             <p className="text-white/60 text-xs font-semibold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
               eZBrez Score — {activeMonth}
             </p>
-            <p className="text-white text-3xl font-bold mt-1" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>67 / 100</p>
+            <p className="text-white text-3xl font-bold mt-1" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{userScore} / 100</p>
           </div>
           <div className="w-14 h-14 rounded-full flex items-center justify-center"
             style={{ background:"rgba(255,255,255,0.12)" }}>
