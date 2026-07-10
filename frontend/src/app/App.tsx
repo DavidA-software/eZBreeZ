@@ -61,8 +61,8 @@ const LS = {
   userExists:   (username: string) => LS.users().some(u => u.username.toLowerCase() === username.toLowerCase()),
   saveBudget:   (u: string, d: BudgetData)          => localStorage.setItem(`ez_budget_${u}`, JSON.stringify(d)),
   loadBudget:   (u: string): BudgetData | null       => JSON.parse(localStorage.getItem(`ez_budget_${u}`) || "null"),
-  saveDecisions:(u: string, d: AnalyzedDecision[])   => localStorage.setItem(`ez_decisions_${u}`, JSON.stringify(d)),
-  loadDecisions:(u: string): AnalyzedDecision[]      => JSON.parse(localStorage.getItem(`ez_decisions_${u}`) || "[]"),
+  saveDecisions:(u: string, d: DecisionResult[])   => localStorage.setItem(`ez_decisions_${u}`, JSON.stringify(d)),
+  loadDecisions:(u: string): DecisionResult[]      => JSON.parse(localStorage.getItem(`ez_decisions_${u}`) || "[]"),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -74,17 +74,14 @@ interface BudgetData { income: string; period: "Month"|"Year"; expenses: Expense
 interface Msg { id: number; text: string; from: "ai"|"user"; time: string }
 
 interface DecisionResult {
+  id: number;
+  date: Date;
+  description: string;
+  amount: number;
   score: number;
   summary: string;
   pros: string[];
   cons: string[];
-}
-interface AnalyzedDecision {
-  id: number;
-  description: string;
-  amount: number;
-  result: DecisionResult;
-  date: Date;
 }
 
 const DEFAULT_BUDGET: BudgetData = {
@@ -98,7 +95,7 @@ const DEFAULT_BUDGET: BudgetData = {
 
 
 // calculate ezbreez score + add , decisions: Date 
-function ezbreezScore(decisions: AnalyzedDecision[], month: Date) {
+function ezbreezScore(decisions: DecisionResult[], month: Date) {
   const targetYear = month.getFullYear();
   const targetMonth = month.getMonth();
 
@@ -108,10 +105,10 @@ function ezbreezScore(decisions: AnalyzedDecision[], month: Date) {
         entry.date.getFullYear() === targetYear &&
         entry.date.getMonth() === targetMonth
     )
-    .reduce((total, entry) => total + entry.amount, 0);
+    .reduce((total, entry) => total + entry.score, 0);
 }
 
-function getMonths(entries: AnalyzedDecision[]): Date[] {
+function getMonths(entries: DecisionResult[]): Date[] {
   const months: Date[] = [];
   let currentYear: number | null = null;
   let currentMonth: number | null = null;
@@ -332,7 +329,7 @@ function scoreDecision(description: string, amount: number, budget: BudgetData):
     baseScore >= 33 ? "This carries significant financial risk. Carefully review the cons before proceeding." :
     "This decision poses serious financial risk. Consider alternatives before committing.";
 
-  return { score: baseScore, pros, cons, summary: `${label} — ${summaryTone}` };
+  return { id: description.length, date: new Date(), description: description, amount: amount, score: baseScore, pros, cons, summary: `${label} — ${summaryTone}` };
 }
 
 // ─── Bree AI "brain" ──────────────────────────────────────────────────────────
@@ -456,7 +453,7 @@ function PrimaryBtn({ children, onClick, sound = "confirm", full = false, disabl
 // ═════════════════════════════════════════════════════════════════════════════
 function AuthLayout({ screen, go, onLogin }: {
   screen: Screen; go: (s: Screen) => void;
-  onLogin: (username: string, budget: BudgetData, decisions: AnalyzedDecision[]) => void;
+  onLogin: (username: string, budget: BudgetData, decisions: DecisionResult[]) => void;
 }) {
   return (
       <div className="size-full flex flex-col md:flex-row overflow-hidden" style={{ background: P.bg }}>
@@ -700,7 +697,7 @@ function Sidebar({ active, go, username, onLogout, onClose, userScore }: {
 function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, onDecisionsChange, onLogout }: {
   screen: Screen; go: (s: Screen) => void; username: string;
   budget: BudgetData; onBudgetChange: (b: BudgetData) => void;
-  decisions: AnalyzedDecision[]; onDecisionsChange: (d: AnalyzedDecision[]) => void;
+  decisions: DecisionResult[]; onDecisionsChange: (d: DecisionResult[]) => void;
   onLogout: () => void;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -724,7 +721,7 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
           <div className="w-8" />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {screen === "dashboard" && <DashboardView go={go} budget={budget} username={username} userScore={userScore} />}
+          {screen === "dashboard" && <DashboardView go={go} />}
           {screen === "budget"    && <BudgetView budget={budget} onChange={onBudgetChange} go={go} />}
           {screen === "chat"      && <ChatView username={username} budget={budget} />}
           {screen === "history"   && <HistoryView decisions={decisions} userScore={userScore}/>}
@@ -1364,11 +1361,11 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], userScore: number }) {
+function HistoryView({ decisions, userScore }: { decisions: DecisionResult[], userScore: number }) {
   const months = getMonths(decisions);
   const [activeMonth, setActiveMonth] = useState(months[months.length - 1]);
 
-  const prevMonthDiff = 0;
+  var prevMonthDiff = 0;
   if (months.length >= 2) {
     prevMonthDiff = userScore - ezbreezScore(decisions, months[months.length - 2]);
 
@@ -1428,16 +1425,16 @@ function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], 
           </h2>
           {decisions.map(d=>{
             const color =
-              d.result.score >= 82 ? P.emerald :
-              d.result.score >= 67 ? P.teal :
-              d.result.score >= 50 ? "#D4A21A" :
-              d.result.score >= 33 ? "#E07B30" : "#C0574A";
+              d.score >= 82 ? P.emerald :
+              d.score >= 67 ? P.teal :
+              d.score >= 50 ? "#D4A21A" :
+              d.score >= 33 ? "#E07B30" : "#C0574A";
             return (
               <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
                 style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
                 <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
                   style={{ background:`${color}15` }}>
-                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
+                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.score}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
@@ -1450,7 +1447,7 @@ function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], 
                 </div>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
                   style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
+                  {d.score >= 82 ? "Excellent" : d.score >= 67 ? "Good" : d.score >= 50 ? "Moderate" : d.score >= 33 ? "Risky" : "Avoid"}
                 </span>
               </div>
             );
@@ -1492,14 +1489,13 @@ function ScoreGauge({ score }: { score: number }) {
 }
 
 function ScoresView({ budget, decisions, onDecisionsChange, username }: {
-  budget: BudgetData; decisions: AnalyzedDecision[];
-  onDecisionsChange: (d: AnalyzedDecision[]) => void; username: string;
+  budget: BudgetData; decisions: DecisionResult[];
+  onDecisionsChange: (d: DecisionResult[]) => void; username: string;
 }) {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
-  const [latest, setLatest] = useState<AnalyzedDecision|null>(null);
-  const uid = useRef(decisions.length + 1);
+  const [latest, setLatest] = useState<DecisionResult|null>(null);
 
   const analyze = () => {
     if (!description.trim()) return;
@@ -1507,25 +1503,18 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
     setAnalyzing(true);
     setTimeout(() => {
       const result = scoreDecision(description, parseFloat(amount)||0, budget);
-      const decision: AnalyzedDecision = {
-        id: uid.current++,
-        description: description.trim(),
-        amount: parseFloat(amount)||0,
-        result,
-        date: new Date(),
-      };
-      const updated = [decision, ...decisions].slice(0, 20);
+      const updated = [...decisions, result];
       onDecisionsChange(updated);
-      setLatest(decision);
+      setLatest(result);
       setDescription("");
       setAmount("");
       setAnalyzing(false);
     }, 1000 + Math.random() * 800);
   };
 
-  const  [error, setError] = useState("");
 
 {/*
+  const  [error, setError] = useState("");
   const handleInput = async () => {
     setError("");
     const userId = localStorage.getItem("userId");
@@ -1551,24 +1540,16 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
       if (!res.ok) throw new Error("Failed to save ");
       const result = await res.json();
 
-      const decision: AnalyzedDecision = {
-        id: uid.current++,
-        description: description.trim(),
-        amount: parseFloat(amount)||0,
-        result,
-        date: new Date(),
-      };
 */}
 
       {/* there will be at most 20 decisions in display/kept in local storage at once */}
 {/*
-      const updated = [decision, ...decisions].slice(0, 20);
+      const updated = [...decisions, result].slice(0, 20);
       onDecisionsChange(updated);
-      setLatest(decision);
+      setLatest(result);
 
       setAmount("");
       setAnalyzing(false);
-
 
     } catch (err: any) {
       setError(err.message || "Something went wrong getting a response.");
@@ -1658,11 +1639,11 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
                 </p>
               )}
             </div>
-            <ScoreGauge score={latest.result.score} />
+            <ScoreGauge score={latest.score} />
           </div>
 
           <p className="text-sm leading-relaxed" style={{ fontFamily:"'DM Sans',sans-serif", color:"#4A7080" }}>
-            {latest.result.summary}
+            {latest.summary}
           </p>
 
           <div className="grid sm:grid-cols-2 gap-4">
@@ -1672,7 +1653,7 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
                 <CheckCircle size={13}/> Pros
               </p>
               <ul className="flex flex-col gap-2">
-                {latest.result.pros.map((pro,i)=>(
+                {latest.pros.map((pro,i)=>(
                   <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
                     style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
                     <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:P.emerald }}/>
@@ -1687,7 +1668,7 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
                 <XCircle size={13}/> Cons
               </p>
               <ul className="flex flex-col gap-2">
-                {latest.result.cons.map((con,i)=>(
+                {latest.cons.map((con,i)=>(
                   <li key={i} className="flex items-start gap-2 text-sm leading-relaxed"
                     style={{ fontFamily:"'DM Sans',sans-serif", color:P.dark }}>
                     <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background:"#C0574A" }}/>
@@ -1711,16 +1692,16 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [username, setUsername] = useState("");
   const [budget, setBudget] = useState<BudgetData>(DEFAULT_BUDGET);
-  const [decisions, setDecisions] = useState<AnalyzedDecision[]>([]);
+  const [decisions, setDecisions] = useState<DecisionResult[]>([]);
 
   const go = (s: Screen) => { playSound("click"); setScreen(s); };
 
-  const handleLogin = (uname: string, b: BudgetData, d: AnalyzedDecision[]) => {
+  const handleLogin = (uname: string, b: BudgetData, d: DecisionResult[]) => {
     setUsername(uname); setBudget(b); setDecisions(d); go("dashboard");
   };
   const handleLogout = () => { setUsername(""); setBudget(DEFAULT_BUDGET); setDecisions([]); go("login"); };
   const handleBudgetChange = (b: BudgetData) => { setBudget(b); if (username) LS.saveBudget(username, b); };
-  const handleDecisionsChange = (d: AnalyzedDecision[]) => { setDecisions(d); if (username) LS.saveDecisions(username, d); };
+  const handleDecisionsChange = (d: DecisionResult[]) => { setDecisions(d); if (username) LS.saveDecisions(username, d); };
 
   return (
     <div className="size-full" style={{ fontFamily:"'DM Sans',sans-serif" }}>
