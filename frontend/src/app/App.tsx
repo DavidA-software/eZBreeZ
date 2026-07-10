@@ -98,10 +98,9 @@ const DEFAULT_BUDGET: BudgetData = {
 
 
 // calculate ezbreez score + add , decisions: Date 
-function ezbreezScore(decisions: AnalyzedDecision[]) {
-    /*
-  const targetYear = monthStart.getFullYear();
-  const targetMonth = monthStart.getMonth();
+function ezbreezScore(decisions: AnalyzedDecision[], month: Date) {
+  const targetYear = month.getFullYear();
+  const targetMonth = month.getMonth();
 
   return decisions
     .filter(
@@ -110,19 +109,6 @@ function ezbreezScore(decisions: AnalyzedDecision[]) {
         entry.date.getMonth() === targetMonth
     )
     .reduce((total, entry) => total + entry.amount, 0);
-*/
-  if (decisions.length === 0) return 0;
-  // make for past 30 days
-
-  let total = 0;
-  for (let i = 0; i < decisions.length; i++) {
-    if (decisions[i].date)
-    total += decisions[i].amount;
-  }
-
-  const score = Math.floor(total / decisions.length);
-  return score;
-
 }
 
 function getMonths(entries: AnalyzedDecision[]): Date[] {
@@ -142,7 +128,16 @@ function getMonths(entries: AnalyzedDecision[]): Date[] {
 
   }
 
-  return months;
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const last = months[months.length - 1];
+  const alreadyIncluded =
+    last &&
+    last.getFullYear() === currentMonthStart.getFullYear() &&
+    last.getMonth() === currentMonthStart.getMonth();
+
+  return alreadyIncluded ? months : [...months, currentMonthStart];
 }
 
 // ─── Financial Decision Scorer AI ─────────────────────────────────────────────
@@ -709,7 +704,7 @@ function AppLayout({ screen, go, username, budget, onBudgetChange, decisions, on
   onLogout: () => void;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const userScore = ezbreezScore(decisions);
+  const userScore = ezbreezScore(decisions, new Date);
   return (
     <div className="size-full flex overflow-hidden" style={{ background: P.bg }}>
       <aside className="hidden md:flex flex-col w-60 shrink-0 overflow-y-auto">
@@ -1364,37 +1359,20 @@ function ChatView({ username, budget }: { username:string; budget:BudgetData }) 
 // ═════════════════════════════════════════════════════════════════════════════
 // HISTORY (original monthly spending view)
 // ═════════════════════════════════════════════════════════════════════════════
-const MONTHS = ["July 2026","June 2026","May 2026"]; // to delete
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
-const MONTH_DATA: Record<string,{id:number;label:string;pct:number;amount:string;color:string}[]> = { // to delete
-  "July 2026": [
-    { id:1, label:"Unspent",     pct:70, amount:"$3,640", color:P.emerald },
-    { id:2, label:"Food",        pct:22, amount:"$1,144", color:"#C0574A" },
-    { id:3, label:"Car Loan",    pct:5,  amount:"$260",   color:"#D4A21A" },
-    { id:4, label:"Misc",        pct:3,  amount:"$156",   color:P.teal    },
-  ],
-  "June 2026": [
-    { id:1, label:"Personal",    pct:40, amount:"$1,840", color:P.teal    },
-    { id:2, label:"Miscellaneous",pct:80,amount:"$3,680", color:"#C0574A" },
-    { id:3, label:"Car",         pct:20, amount:"$920",   color:"#D4A21A" },
-    { id:4, label:"Misc",        pct:96, amount:"$4,416", color:P.navy    },
-  ],
-  "May 2026": [
-    { id:1, label:"Unspent",     pct:65, amount:"$3,380", color:P.emerald },
-    { id:2, label:"Food",        pct:25, amount:"$1,300", color:"#C0574A" },
-    { id:3, label:"Car Loan",    pct:7,  amount:"$364",   color:"#D4A21A" },
-    { id:4, label:"Utilities",   pct:3,  amount:"$156",   color:P.teal    },
-  ],
-};
-
 function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], userScore: number }) {
-  const [activeMonth, setActiveMonth] = useState("July 2026");
-  const data = MONTH_DATA[activeMonth];
-  //const months = getMonths(decisions);
+  const months = getMonths(decisions);
+  const [activeMonth, setActiveMonth] = useState(months[months.length - 1]);
+
+  const prevMonthDiff = 0;
+  if (months.length >= 2) {
+    prevMonthDiff = userScore - ezbreezScore(decisions, months[months.length - 2]);
+
+  }
 
   return (
     <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
@@ -1405,44 +1383,25 @@ function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], 
 
       {/* set active month */}
 
-      {/* `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}` */}
+      {/*  */}
       <div className="flex gap-2 flex-wrap">
-        {MONTHS.map(m=>(
-          <Btn key={m} sound="click" onClick={()=>setActiveMonth(m)}
+        {months.map(m=>(
+          <Btn key={m.getUTCDate()} sound="click" onClick={()=>setActiveMonth(m)}
             className="rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:brightness-105"
             style={{
               fontFamily:"'Plus Jakarta Sans',sans-serif",
               background: activeMonth===m ? `linear-gradient(135deg,${P.navy},${P.teal})` : "#fff",
               color: activeMonth===m ? "#fff" : P.navy,
               border: activeMonth===m ? "none" : "1px solid rgba(34,87,122,0.15)",
-            }}>{m}</Btn>
+            }}>{`${MONTH_NAMES[m.getMonth()]} ${m.getFullYear()}`}</Btn>
         ))}
       </div>
-      <div className="flex flex-col gap-4">
-        {data.map(item=>(
-          <div key={item.id} className="bg-white rounded-2xl p-5 shadow-sm" style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-3 h-3 rounded-sm" style={{ background:item.color }}/>
-                <span className="text-sm font-semibold" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>{item.label}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium" style={{ fontFamily:"'DM Sans',sans-serif", color:"#9CB8C8" }}>{item.amount}</span>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background:`${item.color}18`, color:item.color }}>{item.pct}%</span>
-              </div>
-            </div>
-            <div className="relative h-3 rounded-full overflow-hidden" style={{ background:"#EEF9F4" }}>
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width:`${item.pct}%`, background:`linear-gradient(90deg,${item.color}CC,${item.color})` }}/>
-            </div>
-          </div>
-        ))}
-      </div>
+
       <div className="rounded-2xl p-6" style={{ background:`linear-gradient(135deg,${P.navy} 0%,${P.teal} 100%)` }}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-white/60 text-xs font-semibold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-              eZBrez Score — {activeMonth}
+              eZBrez Score — {MONTH_NAMES[activeMonth.getMonth()]}
             </p>
             <p className="text-white text-3xl font-bold mt-1" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{userScore} / 100</p>
           </div>
@@ -1452,10 +1411,53 @@ function HistoryView({ decisions, userScore }: { decisions: AnalyzedDecision[], 
           </div>
         </div>
         <div className="h-2.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.15)" }}>
-          <div className="h-full rounded-full" style={{ width:"67%", background:P.mint }}/>
+          <div className="h-full rounded-full" style={{ width:`${userScore}%`, background:P.mint }}/> {/* TODO: change color*/}
         </div>
-        <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>Good standing — +3 pts from last month</p>
+        {activeMonth == months[months.length - 1] &&
+            <p className="text-white/60 text-xs mt-2" style={{ fontFamily:"'DM Sans',sans-serif" }}>{
+            prevMonthDiff > 0 ? `Good standing — +${prevMonthDiff} pts from last month` : prevMonthDiff == 0 ? 
+                `0 change in points since last month` : `${prevMonthDiff} pts difference from last month`}
+        </p>}
       </div>
+
+      {/* Past decisions */}
+      {decisions.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
+            Past Analyses
+          </h2>
+          {decisions.map(d=>{
+            const color =
+              d.result.score >= 82 ? P.emerald :
+              d.result.score >= 67 ? P.teal :
+              d.result.score >= 50 ? "#D4A21A" :
+              d.result.score >= 33 ? "#E07B30" : "#C0574A";
+            return (
+              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
+                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
+                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
+                  style={{ background:`${color}15` }}>
+                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
+                    {d.description}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
+                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
+                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
     </div>
   );
 }
@@ -1510,7 +1512,7 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
         description: description.trim(),
         amount: parseFloat(amount)||0,
         result,
-        date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
+        date: new Date(),
       };
       const updated = [decision, ...decisions].slice(0, 20);
       onDecisionsChange(updated);
@@ -1520,6 +1522,63 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
       setAnalyzing(false);
     }, 1000 + Math.random() * 800);
   };
+
+  const  [error, setError] = useState("");
+
+{/*
+  const handleInput = async () => {
+    setError("");
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      setError("Not logged in");
+      return;
+    }
+
+    const payload = {
+      userId: parseInt(userId),
+      description: description || "",
+      amount: parseFloat(budget.income) || 0,
+      },
+
+    setAnalyzing(true);
+
+    try {
+      const res = await fetch("http://localhost:8081/api/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to save ");
+      const result = await res.json();
+
+      const decision: AnalyzedDecision = {
+        id: uid.current++,
+        description: description.trim(),
+        amount: parseFloat(amount)||0,
+        result,
+        date: new Date(),
+      };
+*/}
+
+      {/* there will be at most 20 decisions in display/kept in local storage at once */}
+{/*
+      const updated = [decision, ...decisions].slice(0, 20);
+      onDecisionsChange(updated);
+      setLatest(decision);
+
+      setAmount("");
+      setAnalyzing(false);
+
+
+    } catch (err: any) {
+      setError(err.message || "Something went wrong getting a response.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+*/}
+
 
   return (
     <div className="px-6 py-7 max-w-2xl mx-auto flex flex-col gap-7">
@@ -1641,43 +1700,6 @@ function ScoresView({ budget, decisions, onDecisionsChange, username }: {
         </div>
       )}
 
-      {/* Past decisions */}
-      {decisions.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:"#9CB8C8" }}>
-            Past Analyses
-          </h2>
-          {decisions.map(d=>{
-            const color =
-              d.result.score >= 82 ? P.emerald :
-              d.result.score >= 67 ? P.teal :
-              d.result.score >= 50 ? "#D4A21A" :
-              d.result.score >= 33 ? "#E07B30" : "#C0574A";
-            return (
-              <div key={d.id} className="bg-white rounded-2xl p-5 shadow-sm flex items-center gap-4"
-                style={{ border:"1px solid rgba(34,87,122,0.07)" }}>
-                <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0"
-                  style={{ background:`${color}15` }}>
-                  <span className="text-xl font-black" style={{ color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{d.result.score}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", color:P.navy }}>
-                    {d.description}
-                  </p>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {d.amount > 0 && <span className="text-xs font-medium" style={{ color:P.teal, fontFamily:"'DM Sans',sans-serif" }}>${d.amount.toLocaleString()}</span>}
-                    <span className="text-xs" style={{ color:"#9CB8C8", fontFamily:"'DM Sans',sans-serif" }}>{d.date}</span>
-                  </div>
-                </div>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
-                  style={{ background:`${color}15`, color, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-                  {d.result.score >= 82 ? "Excellent" : d.result.score >= 67 ? "Good" : d.result.score >= 50 ? "Moderate" : d.result.score >= 33 ? "Risky" : "Avoid"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -1713,3 +1735,19 @@ export default function App() {
     </div>
   );
 }
+
+// todo: theres two options for history tab
+//  1. (the more work but better for app option technically in the long run but
+//   its useless in the short run) when we load up the page, we fetch a list of the
+//   available months that we have history for from the backend as well as a
+//   list of the decisions from the current month. when a user clicks to
+//   another month, frontend will fetch from backend the corresponding data
+//  2. (the easier option) when the user logs in, we simultaneously fetch and
+//   store their entire decision history for parsing in frontend
+//
+// also probably exists various TODOs across this document
+//
+// we might want to delete the bree ai and have the app just be for the ezbreez
+// score but thats kinda buns im ngl
+//
+// settings needs or does not need functionality LOL the button exists
